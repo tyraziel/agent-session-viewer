@@ -1,0 +1,348 @@
+"""Session detail page — turn-by-turn conversation viewer."""
+
+from pathlib import Path
+
+from nicegui import run, ui
+
+from claude_project_viewer.discovery import discover_projects
+from claude_project_viewer.formatting import format_duration_ago, get_activity_indicator
+from claude_project_viewer.parser import Message, Session, Turn, parse_session
+
+
+def create_session_detail_page(project_name: str, session_id: str):
+    state = {"session": None, "last_mtime": 0.0, "session_path": None}
+    expanded_turns: set[int] = set()
+
+    with ui.column().classes("w-full max-w-6xl mx-auto p-6 gap-4"):
+        with ui.row().classes("items-center gap-2 w-full"):
+            ui.button(
+                icon="arrow_back",
+                on_click=lambda: ui.navigate.to(f"/project/{project_name}"),
+            ).props("dense flat")
+            header_label = ui.label("Loading...").classes("text-2xl font-bold")
+
+        meta_row = ui.row().classes("items-center gap-4")
+        summary_container = ui.column().classes("w-full")
+
+        with ui.row().classes("items-center gap-2 w-full"):
+            ui.label("Turns").classes("text-lg font-bold")
+            ui.space()
+            turns_label = ui.label("").classes("text-xs text-grey-6")
+            limit_select = ui.select(
+                options={10: "10", 25: "25", 50: "50", 100: "100", 200: "200", 0: "All"},
+                value=25,
+                label="Show",
+            ).classes("w-24")
+
+        turns_container = ui.column().classes("w-full gap-1")
+
+    async def load():
+        projects = await run.io_bound(discover_projects)
+        project = next((p for p in projects if p.name == project_name), None)
+        if not project:
+            header_label.text = "Project not found"
+            return
+
+        session_info = next(
+            (s for s in project.sessions if s.session_id == session_id), None
+        )
+        if not session_info:
+            header_label.text = "Session not found"
+            return
+
+        state["session_path"] = session_info.path
+        state["resume_command"] = session_info.resume_command
+        state["title"] = session_info.title
+        session = await run.io_bound(parse_session, session_info.path)
+        state["session"] = session
+        state["last_mtime"] = session_info.mtime
+
+        _render_session(
+            session, header_label, meta_row, summary_container,
+            turns_container, turns_label, expanded_turns, session_info.mtime,
+            state["resume_command"], state["title"], limit_select,
+        )
+
+    async def poll():
+        if ui.context.client.is_deleted:
+            return
+        path = state["session_path"]
+        if path is None:
+            return
+        try:
+            current_mtime = Path(path).stat().st_mtime
+        except OSError:
+            return
+        if current_mtime != state["last_mtime"]:
+            state["last_mtime"] = current_mtime
+            session = await run.io_bound(parse_session, path)
+            state["session"] = session
+            _render_session(
+                session, header_label, meta_row, summary_container,
+                turns_container, turns_label, expanded_turns, current_mtime,
+                state.get("resume_command", ""), state.get("title", ""),
+                limit_select,
+            )
+
+    def _on_limit_change():
+        session = state["session"]
+        if session:
+            _render_turns(
+                session, turns_container, turns_label, expanded_turns, limit_select,
+            )
+
+    limit_select.on("update:model-value", _on_limit_change)
+
+    ui.timer(0.1, load, once=True)
+    ui.timer(3.0, poll)
+
+
+def _get_turn_conversation(turn: Turn) -> list[tuple[str, str]]:
+    """Extract all conversational messages (user prompts + assistant text) from a turn."""
+    conversation = []
+    for msg in turn.messages:
+        if msg.role == "user" and msg.content:
+            conversation.append(("user", msg.content))
+        elif msg.role == "assistant" and msg.content:
+            conversation.append(("assistant", msg.content))
+    return conversation
+
+
+def _render_session(
+    session: Session,
+    header_label,
+    meta_row,
+    summary_container,
+    turns_container,
+    turns_label,
+    expanded_turns: set[int],
+    mtime: float,
+    resume_command: str = "",
+    title: str = "",
+    limit_select=None,
+):
+    model_display = session.model or "unknown"
+    if title:
+        header_label.text = f"{title} ({model_display})"
+    else:
+        header_label.text = f"Session ({model_display})"
+
+    meta_row.clear()
+    with meta_row:
+        activity = get_activity_indicator(mtime)
+        if activity:
+            color, icon = activity
+            ui.icon(icon).classes(f"text-{color} animate-pulse")
+        ui.badge(f"{session.total_turns} turns", color="primary").classes("text-xs")
+        ago = format_duration_ago(mtime)
+        ui.label(f"Last active: {ago}").classes("text-xs text-grey-6")
+        ui.label(session.session_id).classes("text-xs text-grey-6").style(
+            "font-family: monospace"
+        )
+        if resume_command:
+            ui.button(
+                "Resume command", icon="content_copy",
+                on_click=lambda: ui.run_javascript(
+                    f"navigator.clipboard.writeText({resume_command!r})"
+                ),
+            ).props("dense flat size=xs").classes("text-grey-6")
+
+    summary_container.clear()
+    with summary_container:
+        _render_token_summary(session)
+
+    _render_turns(session, turns_container, turns_label, expanded_turns, limit_select)
+
+
+def _render_turns(session, turns_container, turns_label, expanded_turns, limit_select):
+    limit = limit_select.value if limit_select else 0
+    all_turns = list(reversed(session.turns))
+    total = len(all_turns)
+
+    if limit and limit > 0:
+        display = all_turns[:limit]
+    else:
+        display = all_turns
+
+    turns_label.text = f"Showing {len(display)} of {total}"
+
+    turns_container.clear()
+    with turns_container:
+        for turn in display:
+            _render_turn_row(turn, expanded_turns)
+
+
+def _render_token_summary(session: Session):
+    tokens = session.total_tokens
+    total = tokens["input_tokens"] + tokens["output_tokens"]
+    cache_read = tokens["cache_read_input_tokens"]
+    cache_create = tokens["cache_creation_input_tokens"]
+    all_input = tokens["input_tokens"] + cache_read + cache_create
+    cache_ratio = cache_read / all_input if all_input > 0 else 0.0
+
+    if total == 0:
+        return
+
+    with ui.card().classes("w-full").style(
+        "background: #1a1a2e; border: 1px solid #2a2a4a;"
+    ):
+        ui.label("Token Summary").classes("text-sm font-bold")
+        with ui.grid(columns=6).classes("gap-1"):
+            ui.label("Input:").classes("text-xs text-grey-6")
+            ui.label(f"{tokens['input_tokens']:,}").classes("text-xs")
+            ui.label("Output:").classes("text-xs text-grey-6")
+            ui.label(f"{tokens['output_tokens']:,}").classes("text-xs")
+            ui.label("Total:").classes("text-xs text-grey-6")
+            ui.label(f"{total:,}").classes("text-xs")
+            ui.label("Cache Read:").classes("text-xs text-grey-6")
+            ui.label(f"{cache_read:,}").classes("text-xs")
+            ui.label("Cache Create:").classes("text-xs text-grey-6")
+            ui.label(f"{cache_create:,}").classes("text-xs")
+            ui.label("Cache Hit:").classes("text-xs text-grey-6")
+            ui.label(f"{cache_ratio:.1%}").classes("text-xs")
+
+
+def _render_turn_row(turn: Turn, expanded_turns: set[int]):
+    type_colors = {
+        "system": "blue",
+        "user": "primary",
+        "assistant": "green",
+        "tool_use": "orange",
+        "unknown": "grey",
+    }
+    turn_type = turn.turn_type
+    color = type_colors.get(turn_type, "grey")
+    tokens = turn.total_tokens
+    conversation = _get_turn_conversation(turn)
+    tool_count = sum(len(m.tool_calls) for m in turn.messages)
+
+    with ui.card().classes("w-full").style(
+        "border-left: 3px solid var(--q-primary); padding: 12px 16px;"
+    ):
+        # header row
+        with ui.row().classes("items-center gap-2 w-full"):
+            ui.label(f"Turn {turn.number}").classes("text-xs font-bold")
+            ui.badge(turn_type, color=color).classes("text-xs")
+            if tokens > 0:
+                ui.label(f"{tokens:,} tok").classes("text-xs text-grey-6")
+            if tool_count > 0:
+                ui.badge(
+                    f"{tool_count} tool{'s' if tool_count != 1 else ''}",
+                    color="orange",
+                ).classes("text-xs")
+
+        # conversation recap
+        if conversation:
+            with ui.column().classes("w-full gap-2 mt-2"):
+                for role, content in conversation:
+                    if role == "user":
+                        with ui.row().classes("items-start gap-2"):
+                            ui.icon("person").classes("text-primary text-sm mt-1")
+                            with ui.element("div").classes("flex-grow").style(
+                                "background: rgba(33, 150, 243, 0.08); "
+                                "border-radius: 8px; padding: 8px 12px;"
+                            ):
+                                ui.html(
+                                    f'<pre style="white-space: pre-wrap; '
+                                    f"word-break: break-word; margin: 0; "
+                                    f'font-size: 0.8rem; max-height: 150px; '
+                                    f'overflow-y: auto;">'
+                                    f"{_escape_html(content)}</pre>"
+                                )
+                    else:
+                        with ui.row().classes("items-start gap-2"):
+                            ui.icon("smart_toy").classes("text-green text-sm mt-1")
+                            with ui.element("div").classes("flex-grow").style(
+                                "background: rgba(76, 175, 80, 0.08); "
+                                "border-radius: 8px; padding: 8px 12px;"
+                            ):
+                                ui.html(
+                                    f'<pre style="white-space: pre-wrap; '
+                                    f"word-break: break-word; margin: 0; "
+                                    f'font-size: 0.8rem; max-height: 150px; '
+                                    f'overflow-y: auto;">'
+                                    f"{_escape_html(content)}</pre>"
+                                )
+
+        # expandable full details
+        is_open = turn.number in expanded_turns
+        exp = ui.expansion("Full details", value=is_open).classes("w-full mt-2").props(
+            "dense header-class=text-grey-6"
+        )
+
+        def _on_toggle(e, tn=turn.number):
+            if e.value:
+                expanded_turns.add(tn)
+            else:
+                expanded_turns.discard(tn)
+
+        exp.on_value_change(_on_toggle)
+
+        with exp:
+            for msg in turn.messages:
+                _render_message(msg)
+
+
+def _render_message(msg: Message):
+    icon_map = {
+        "system": ("settings", "text-blue"),
+        "user": ("person", "text-primary"),
+        "assistant": ("smart_toy", "text-green"),
+        "tool_result": ("output", "text-orange"),
+    }
+    icon_name, icon_color = icon_map.get(msg.role, ("help", "text-grey-6"))
+
+    with ui.row().classes("items-start gap-2 py-1"):
+        ui.icon(icon_name).classes(f"{icon_color} text-xs mt-1")
+        with ui.column().classes("gap-1 w-full"):
+            role_label = msg.role
+            if msg.model:
+                role_label += f" ({msg.model})"
+            if msg.usage:
+                ti = msg.usage.get("input_tokens", 0)
+                to = msg.usage.get("output_tokens", 0)
+                if ti + to > 0:
+                    role_label += f" [{ti + to:,} tok]"
+            ui.label(role_label).classes("text-xs font-bold")
+
+            if msg.content:
+                _render_text_block(msg.content)
+
+            for tc in msg.tool_calls:
+                with ui.row().classes("items-center gap-1"):
+                    ui.icon("build").classes("text-orange text-xs")
+                    ui.label(f"tool_call: {tc.tool_name}").classes(
+                        "text-xs font-bold text-orange"
+                    )
+                _render_text_block(str(tc.tool_input), color="text-grey-6")
+
+            for tr in msg.tool_results:
+                label_cls = (
+                    "text-xs font-bold text-red"
+                    if tr.is_error
+                    else "text-xs font-bold text-orange"
+                )
+                with ui.row().classes("items-center gap-1"):
+                    icon = "error" if tr.is_error else "output"
+                    ui.icon(icon).classes("text-orange text-xs")
+                    ui.label(f"result: {tr.tool_name}").classes(label_cls)
+                if tr.output:
+                    _render_text_block(tr.output, color="text-grey-6")
+
+
+def _render_text_block(text: str, color: str = "text-grey-6"):
+    escaped = _escape_html(text)
+    ui.html(
+        f'<pre style="white-space: pre-wrap; word-break: break-word; '
+        f"margin: 2px 0; font-size: 0.75rem; max-height: 300px; "
+        f'overflow-y: auto;">{escaped}</pre>'
+    ).classes(color)
+
+
+def _escape_html(text: str) -> str:
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
