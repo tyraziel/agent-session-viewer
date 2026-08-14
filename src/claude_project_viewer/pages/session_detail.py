@@ -6,7 +6,7 @@ from nicegui import run, ui
 
 from claude_project_viewer.discovery import discover_projects
 from claude_project_viewer.formatting import format_duration_ago, get_activity_indicator
-from claude_project_viewer.parser import Message, Session, Turn, parse_session
+from claude_project_viewer.parser import Message, Session, SubAgentInfo, Turn, parse_session
 
 
 def create_session_detail_page(project_name: str, session_id: str):
@@ -179,6 +179,7 @@ def _render_token_summary(session: Session):
     cache_create = tokens["cache_creation_input_tokens"]
     all_input = tokens["input_tokens"] + cache_read + cache_create
     cache_ratio = cache_read / all_input if all_input > 0 else 0.0
+    subagent_tok = session.total_subagent_tokens
 
     if total == 0:
         return
@@ -200,6 +201,9 @@ def _render_token_summary(session: Session):
             ui.label(f"{cache_create:,}").classes("text-xs")
             ui.label("Cache Hit:").classes("text-xs text-grey-6")
             ui.label(f"{cache_ratio:.1%}").classes("text-xs")
+            if subagent_tok > 0:
+                ui.label("Subagent:").classes("text-xs text-purple")
+                ui.label(f"{subagent_tok:,}").classes("text-xs text-purple")
 
 
 def _render_turn_row(turn: Turn, expanded_turns: set[int]):
@@ -208,6 +212,7 @@ def _render_turn_row(turn: Turn, expanded_turns: set[int]):
         "user": "primary",
         "assistant": "green",
         "tool_use": "orange",
+        "agent": "purple",
         "unknown": "grey",
     }
     turn_type = turn.turn_type
@@ -215,17 +220,26 @@ def _render_turn_row(turn: Turn, expanded_turns: set[int]):
     tokens = turn.total_tokens
     conversation = _get_turn_conversation(turn)
     tool_count = sum(len(m.tool_calls) for m in turn.messages)
+    agent_results = [m for m in turn.messages if m.role == "agent_result" and m.subagent]
+    agent_count = sum(
+        1 for m in turn.messages for tc in m.tool_calls if tc.tool_name == "Agent"
+    )
 
+    border_color = "#9c27b0" if turn_type == "agent" else "var(--q-primary)"
     with ui.card().classes("w-full").style(
-        "border-left: 3px solid var(--q-primary); padding: 12px 16px;"
+        f"border-left: 3px solid {border_color}; padding: 12px 16px;"
     ):
-        # header row
         with ui.row().classes("items-center gap-2 w-full"):
             ui.label(f"Turn {turn.number}").classes("text-xs font-bold")
             ui.badge(turn_type, color=color).classes("text-xs")
             if tokens > 0:
                 ui.label(f"{tokens:,} tok").classes("text-xs text-grey-6")
-            if tool_count > 0:
+            if agent_count > 0:
+                ui.badge(
+                    f"{agent_count} agent{'s' if agent_count != 1 else ''}",
+                    color="purple",
+                ).classes("text-xs")
+            elif tool_count > 0:
                 ui.badge(
                     f"{tool_count} tool{'s' if tool_count != 1 else ''}",
                     color="orange",
@@ -264,6 +278,12 @@ def _render_turn_row(turn: Turn, expanded_turns: set[int]):
                                     f"{_escape_html(content)}</pre>"
                                 )
 
+        # agent result cards
+        if agent_results:
+            with ui.column().classes("w-full gap-2 mt-2"):
+                for msg in agent_results:
+                    _render_agent_result_card(msg.subagent)
+
         # expandable full details
         is_open = turn.number in expanded_turns
         exp = ui.expansion("Full details", value=is_open).classes("w-full mt-2").props(
@@ -284,6 +304,10 @@ def _render_turn_row(turn: Turn, expanded_turns: set[int]):
 
 
 def _render_message(msg: Message):
+    if msg.role == "agent_result" and msg.subagent:
+        _render_agent_result_card(msg.subagent)
+        return
+
     icon_map = {
         "system": ("settings", "text-blue"),
         "user": ("person", "text-primary"),
@@ -309,12 +333,25 @@ def _render_message(msg: Message):
                 _render_text_block(msg.content)
 
             for tc in msg.tool_calls:
-                with ui.row().classes("items-center gap-1"):
-                    ui.icon("build").classes("text-orange text-xs")
-                    ui.label(f"tool_call: {tc.tool_name}").classes(
-                        "text-xs font-bold text-orange"
+                if tc.tool_name == "Agent":
+                    _render_agent_tool_call(tc)
+                else:
+                    with ui.row().classes("items-center gap-1"):
+                        ui.icon("build").classes("text-orange text-xs")
+                        ui.label(f"tool_call: {tc.tool_name}").classes(
+                            "text-xs font-bold text-orange"
+                        )
+                    _render_text_block(str(tc.tool_input), color="text-grey-6")
+
+            if msg.subagent and msg.subagent.status == "launched":
+                with ui.row().classes("items-center gap-1 mt-1"):
+                    ui.icon("rocket_launch").classes("text-purple text-xs")
+                    label = msg.subagent.description or msg.subagent.agent_id
+                    ui.label(f"launched: {label}").classes(
+                        "text-xs font-bold text-purple"
                     )
-                _render_text_block(str(tc.tool_input), color="text-grey-6")
+                    if msg.subagent.model:
+                        ui.badge(msg.subagent.model, color="grey").classes("text-xs")
 
             for tr in msg.tool_results:
                 label_cls = (
@@ -328,6 +365,114 @@ def _render_message(msg: Message):
                     ui.label(f"result: {tr.tool_name}").classes(label_cls)
                 if tr.output:
                     _render_text_block(tr.output, color="text-grey-6")
+
+
+def _render_agent_result_card(info: SubAgentInfo):
+    status_color = "green" if info.status == "completed" else "red"
+    with ui.card().classes("w-full").style(
+        "background: rgba(156, 39, 176, 0.08); "
+        "border-left: 3px solid #9c27b0; "
+        "padding: 12px 16px;"
+    ):
+        with ui.row().classes("items-center gap-2 w-full"):
+            ui.icon("groups").classes("text-purple text-sm")
+            name = info.name or info.description or info.agent_id
+            ui.label(name).classes("text-sm font-bold")
+            ui.badge(info.status, color=status_color).classes("text-xs")
+            if info.model:
+                ui.badge(info.model, color="grey").classes("text-xs")
+
+        with ui.row().classes("items-center gap-4 mt-1"):
+            if info.duration_ms:
+                secs = info.duration_ms / 1000
+                with ui.row().classes("items-center gap-1"):
+                    ui.icon("schedule").classes("text-xs text-grey-6")
+                    ui.label(f"{secs:.1f}s").classes("text-xs text-grey-6")
+            if info.subagent_tokens:
+                with ui.row().classes("items-center gap-1"):
+                    ui.icon("analytics").classes("text-xs text-grey-6")
+                    ui.label(f"{info.subagent_tokens:,} tok").classes(
+                        "text-xs text-grey-6"
+                    )
+            if info.tool_uses:
+                with ui.row().classes("items-center gap-1"):
+                    ui.icon("build").classes("text-xs text-grey-6")
+                    ui.label(
+                        f"{info.tool_uses} tool{'s' if info.tool_uses != 1 else ''}"
+                    ).classes("text-xs text-grey-6")
+
+        if info.result:
+            with ui.expansion("Result").classes("w-full mt-1").props(
+                "dense header-class=text-grey-6"
+            ):
+                _render_text_block(info.result)
+
+        if info.session and info.session.turns:
+            turn_count = len(info.session.turns)
+            label = f"Conversation ({turn_count} turn{'s' if turn_count != 1 else ''})"
+            with ui.expansion(label).classes("w-full mt-1").props(
+                "dense header-class=text-grey-6"
+            ):
+                _render_subagent_conversation(info.session)
+
+
+def _render_subagent_conversation(session):
+    """Render a subagent's conversation as a compact turn list."""
+    for turn in session.turns:
+        conversation = _get_turn_conversation(turn)
+        tool_calls = [
+            tc for m in turn.messages for tc in m.tool_calls
+        ]
+
+        with ui.row().classes("items-start gap-2 py-1 w-full").style(
+            "border-left: 2px solid #9c27b044; padding-left: 8px;"
+        ):
+            with ui.column().classes("gap-1 w-full"):
+                with ui.row().classes("items-center gap-2"):
+                    ui.label(f"Turn {turn.number}").classes(
+                        "text-xs font-bold text-grey-6"
+                    )
+                    if turn.total_tokens > 0:
+                        ui.label(f"{turn.total_tokens:,} tok").classes(
+                            "text-xs text-grey-8"
+                        )
+                    if tool_calls:
+                        names = ", ".join(tc.tool_name for tc in tool_calls[:5])
+                        if len(tool_calls) > 5:
+                            names += f" +{len(tool_calls) - 5}"
+                        ui.label(names).classes("text-xs text-orange")
+
+                for role, content in conversation:
+                    if role == "user":
+                        with ui.row().classes("items-start gap-1"):
+                            ui.icon("person").classes(
+                                "text-primary text-xs mt-1"
+                            )
+                            _render_text_block(content)
+                    else:
+                        with ui.row().classes("items-start gap-1"):
+                            ui.icon("smart_toy").classes(
+                                "text-green text-xs mt-1"
+                            )
+                            _render_text_block(content)
+
+
+def _render_agent_tool_call(tc):
+    name = tc.tool_input.get("name", tc.tool_input.get("description", "Agent"))
+    subagent_type = tc.tool_input.get("subagent_type", "")
+    prompt = tc.tool_input.get("prompt", "")
+
+    with ui.row().classes("items-center gap-1"):
+        ui.icon("groups").classes("text-purple text-xs")
+        ui.label(f"Agent: {name}").classes("text-xs font-bold text-purple")
+        if subagent_type:
+            ui.badge(subagent_type, color="deep-purple-3").classes("text-xs")
+
+    if prompt:
+        with ui.expansion("Prompt").classes("w-full").props(
+            "dense header-class=text-grey-6"
+        ):
+            _render_text_block(prompt)
 
 
 def _render_text_block(text: str, color: str = "text-grey-6"):
