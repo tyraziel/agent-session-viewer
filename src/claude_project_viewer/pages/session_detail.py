@@ -7,6 +7,7 @@ from nicegui import run, ui
 from claude_project_viewer.discovery import discover_projects
 from claude_project_viewer.formatting import format_duration_ago, get_activity_indicator
 from claude_project_viewer.parser import Message, Session, SubAgentInfo, Turn, parse_session
+from claude_project_viewer.pricing import estimate_cost
 
 
 def create_session_detail_page(project_name: str, session_id: str):
@@ -172,6 +173,22 @@ def _render_turns(session, turns_container, turns_label, expanded_turns, limit_s
             _render_turn_row(turn, expanded_turns)
 
 
+def _format_cost(cost: float | None) -> str:
+    if cost is None:
+        return ""
+    if cost < 0.01:
+        return f"${cost:.4f}"
+    return f"${cost:.2f}"
+
+
+def _cost_label(cost: float | None):
+    """Render a cost value in matrix green, or an empty placeholder."""
+    text = _format_cost(cost) if cost is not None else ""
+    ui.label(text).classes("text-xs").style(
+        "color: #00ff41; font-family: monospace;"
+    )
+
+
 def _render_token_summary(session: Session):
     tokens = session.total_tokens
     total = tokens["input_tokens"] + tokens["output_tokens"]
@@ -184,26 +201,49 @@ def _render_token_summary(session: Session):
     if total == 0:
         return
 
+    model = session.model or ""
+    total_cost = estimate_cost(
+        model, tokens["input_tokens"], tokens["output_tokens"],
+        cache_read, cache_create,
+    )
+    input_cost = estimate_cost(model, input_tokens=tokens["input_tokens"])
+    output_cost = estimate_cost(model, output_tokens=tokens["output_tokens"])
+    cache_read_cost = estimate_cost(model, cache_read_tokens=cache_read)
+    cache_create_cost = estimate_cost(model, cache_create_tokens=cache_create)
+
     with ui.card().classes("w-full").style(
         "background: #1a1a2e; border: 1px solid #2a2a4a;"
     ):
-        ui.label("Token Summary").classes("text-sm font-bold")
-        with ui.grid(columns=6).classes("gap-1"):
+        with ui.row().classes("items-center gap-2"):
+            ui.label("Token Summary").classes("text-sm font-bold")
+            if total_cost is not None:
+                ui.badge(
+                    f"${total_cost:.4f}", color="green",
+                ).classes("text-xs")
+
+        with ui.grid(columns=9).classes("gap-1"):
             ui.label("Input:").classes("text-xs text-grey-6")
             ui.label(f"{tokens['input_tokens']:,}").classes("text-xs")
+            _cost_label(input_cost)
             ui.label("Output:").classes("text-xs text-grey-6")
             ui.label(f"{tokens['output_tokens']:,}").classes("text-xs")
+            _cost_label(output_cost)
             ui.label("Total:").classes("text-xs text-grey-6")
             ui.label(f"{total:,}").classes("text-xs")
+            _cost_label(total_cost)
             ui.label("Cache Read:").classes("text-xs text-grey-6")
             ui.label(f"{cache_read:,}").classes("text-xs")
+            _cost_label(cache_read_cost)
             ui.label("Cache Create:").classes("text-xs text-grey-6")
             ui.label(f"{cache_create:,}").classes("text-xs")
+            _cost_label(cache_create_cost)
             ui.label("Cache Hit:").classes("text-xs text-grey-6")
             ui.label(f"{cache_ratio:.1%}").classes("text-xs")
+            ui.label("").classes("text-xs")
             if subagent_tok > 0:
                 ui.label("Subagent:").classes("text-xs text-purple")
                 ui.label(f"{subagent_tok:,}").classes("text-xs text-purple")
+                ui.label("").classes("text-xs")
 
 
 def _render_turn_row(turn: Turn, expanded_turns: set[int]):
