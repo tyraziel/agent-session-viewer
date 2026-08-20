@@ -218,8 +218,12 @@ def _render_token_summary(session: Session):
             ui.label("Token Summary").classes("text-sm font-bold")
             if total_cost is not None:
                 ui.badge(
-                    f"${total_cost:.4f}", color="green",
-                ).classes("text-xs")
+                    f"~${total_cost:.4f}", color="green",
+                ).classes("text-xs").tooltip(
+                    "Estimated from published list prices. "
+                    "Actual costs may differ due to negotiated rates, "
+                    "billing tier, or pricing changes."
+                )
 
         with ui.grid(columns=9).classes("gap-1"):
             ui.label("Input:").classes("text-xs text-grey-6")

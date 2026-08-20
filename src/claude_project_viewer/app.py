@@ -11,6 +11,16 @@ from claude_project_viewer.pages.session_list import create_session_list_page
 
 def _page_setup():
     ui.dark_mode(True)
+    with ui.footer().classes("items-center justify-center").style(
+        "background: #0a0a1a; border-top: 1px solid #2a2a4a; padding: 8px;"
+    ):
+        ui.html(
+            'Cost estimates are based on '
+            '<a href="https://www.anthropic.com/pricing" target="_blank" '
+            'style="color: #9e9e9e; text-decoration: underline;">'
+            'published Anthropic list prices</a>'
+            ' as of August 20th, 2026 and may not reflect actual billing.'
+        ).classes("text-xs text-grey-7")
 
 
 def create_app():

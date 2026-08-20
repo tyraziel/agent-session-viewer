@@ -72,6 +72,10 @@ src/claude_project_viewer/
     └── session_list.py  # Session listing for a project
 ```
 
+## Cost Estimation Disclaimer
+
+Token cost estimates displayed in the session viewer are based on [published Anthropic list prices](https://www.anthropic.com/pricing) as of August 20th, 2026. Actual costs may differ due to negotiated rates, billing tier, or pricing changes. These figures are approximate and should not be used for accounting purposes.
+
 ## AI Attribution
 
 [AIA PAI SeCeNc Hin R Claude Code \[Opus 4.6 1m\] v1.0](https://aiattribution.github.io/statements/AIA-PAI-SeCeNc-Hin-R-?model=Claude%20Code%20%5BOpus%204.6%201m%5D-v1.0)
