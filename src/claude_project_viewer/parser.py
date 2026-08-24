@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from claude_project_viewer.pricing import estimate_cost
+
 
 @dataclass
 class ToolCall:
@@ -109,6 +111,43 @@ class Turn:
             total += m.usage.get("output_tokens", 0)
         return total
 
+    @property
+    def token_breakdown(self) -> dict[str, int]:
+        totals: dict[str, int] = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+        }
+        for m in self.messages:
+            for key in totals:
+                totals[key] += m.usage.get(key, 0)
+        return totals
+
+    @property
+    def cost_by_type(self) -> dict[str, float]:
+        totals = {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_create": 0.0}
+        for m in self.messages:
+            if not m.model or not m.usage:
+                continue
+            totals["input"] += estimate_cost(
+                m.model, input_tokens=m.usage.get("input_tokens", 0),
+            )
+            totals["output"] += estimate_cost(
+                m.model, output_tokens=m.usage.get("output_tokens", 0),
+            )
+            totals["cache_read"] += estimate_cost(
+                m.model, cache_read_tokens=m.usage.get("cache_read_input_tokens", 0),
+            )
+            totals["cache_create"] += estimate_cost(
+                m.model, cache_create_tokens=m.usage.get("cache_creation_input_tokens", 0),
+            )
+        return totals
+
+    @property
+    def estimated_cost(self) -> float:
+        return sum(self.cost_by_type.values())
+
 
 @dataclass
 class Session:
@@ -139,6 +178,19 @@ class Session:
                 if msg.subagent:
                     total += msg.subagent.subagent_tokens
         return total
+
+    @property
+    def estimated_cost(self) -> float:
+        return sum(turn.estimated_cost for turn in self.turns)
+
+    @property
+    def cost_by_type(self) -> dict[str, float]:
+        totals = {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_create": 0.0}
+        for turn in self.turns:
+            turn_cbt = turn.cost_by_type
+            for key in totals:
+                totals[key] += turn_cbt[key]
+        return totals
 
     @property
     def total_turns(self) -> int:

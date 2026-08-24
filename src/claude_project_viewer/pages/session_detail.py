@@ -4,10 +4,10 @@ from pathlib import Path
 
 from nicegui import run, ui
 
+from claude_project_viewer.config import get_session_paths
 from claude_project_viewer.discovery import discover_projects
 from claude_project_viewer.formatting import format_duration_ago, get_activity_indicator
 from claude_project_viewer.parser import Message, Session, SubAgentInfo, Turn, parse_session
-from claude_project_viewer.pricing import estimate_cost
 
 
 def create_session_detail_page(project_name: str, session_id: str):
@@ -38,7 +38,7 @@ def create_session_detail_page(project_name: str, session_id: str):
         turns_container = ui.column().classes("w-full gap-1")
 
     async def load():
-        projects = await run.io_bound(discover_projects)
+        projects = await run.io_bound(discover_projects, get_session_paths())
         project = next((p for p in projects if p.name == project_name), None)
         if not project:
             header_label.text = "Project not found"
@@ -173,18 +173,15 @@ def _render_turns(session, turns_container, turns_label, expanded_turns, limit_s
             _render_turn_row(turn, expanded_turns)
 
 
-def _format_cost(cost: float | None) -> str:
-    if cost is None:
-        return ""
+def _format_cost(cost: float) -> str:
     if cost < 0.01:
         return f"${cost:.4f}"
     return f"${cost:.2f}"
 
 
-def _cost_label(cost: float | None):
-    """Render a cost value in matrix green, or an empty placeholder."""
-    text = _format_cost(cost) if cost is not None else ""
-    ui.label(text).classes("text-xs").style(
+def _cost_label(cost: float):
+    """Render a cost value in matrix green."""
+    ui.label(_format_cost(cost)).classes("text-xs").style(
         "color: #00ff41; font-family: monospace;"
     )
 
@@ -197,28 +194,20 @@ def _render_token_summary(session: Session):
     all_input = tokens["input_tokens"] + cache_read + cache_create
     cache_ratio = cache_read / all_input if all_input > 0 else 0.0
     subagent_tok = session.total_subagent_tokens
+    total_cost = session.estimated_cost
+    cost_by_type = session.cost_by_type
 
     if total == 0:
         return
-
-    model = session.model or ""
-    total_cost = estimate_cost(
-        model, tokens["input_tokens"], tokens["output_tokens"],
-        cache_read, cache_create,
-    )
-    input_cost = estimate_cost(model, input_tokens=tokens["input_tokens"])
-    output_cost = estimate_cost(model, output_tokens=tokens["output_tokens"])
-    cache_read_cost = estimate_cost(model, cache_read_tokens=cache_read)
-    cache_create_cost = estimate_cost(model, cache_create_tokens=cache_create)
 
     with ui.card().classes("w-full").style(
         "background: #1a1a2e; border: 1px solid #2a2a4a;"
     ):
         with ui.row().classes("items-center gap-2"):
             ui.label("Token Summary").classes("text-sm font-bold")
-            if total_cost is not None:
+            if total_cost > 0:
                 ui.badge(
-                    f"~${total_cost:.4f}", color="green",
+                    f"~{_format_cost(total_cost)}", color="green",
                 ).classes("text-xs").tooltip(
                     "Estimated from published list prices. "
                     "Actual costs may differ due to negotiated rates, "
@@ -228,19 +217,19 @@ def _render_token_summary(session: Session):
         with ui.grid(columns=9).classes("gap-1"):
             ui.label("Input:").classes("text-xs text-grey-6")
             ui.label(f"{tokens['input_tokens']:,}").classes("text-xs")
-            _cost_label(input_cost)
+            _cost_label(cost_by_type["input"])
             ui.label("Output:").classes("text-xs text-grey-6")
             ui.label(f"{tokens['output_tokens']:,}").classes("text-xs")
-            _cost_label(output_cost)
+            _cost_label(cost_by_type["output"])
             ui.label("Total:").classes("text-xs text-grey-6")
             ui.label(f"{total:,}").classes("text-xs")
             _cost_label(total_cost)
             ui.label("Cache Read:").classes("text-xs text-grey-6")
             ui.label(f"{cache_read:,}").classes("text-xs")
-            _cost_label(cache_read_cost)
+            _cost_label(cost_by_type["cache_read"])
             ui.label("Cache Create:").classes("text-xs text-grey-6")
             ui.label(f"{cache_create:,}").classes("text-xs")
-            _cost_label(cache_create_cost)
+            _cost_label(cost_by_type["cache_create"])
             ui.label("Cache Hit:").classes("text-xs text-grey-6")
             ui.label(f"{cache_ratio:.1%}").classes("text-xs")
             ui.label("").classes("text-xs")
@@ -268,6 +257,7 @@ def _render_turn_row(turn: Turn, expanded_turns: set[int]):
     agent_count = sum(
         1 for m in turn.messages for tc in m.tool_calls if tc.tool_name == "Agent"
     )
+    turn_cost = turn.estimated_cost
 
     border_color = "#9c27b0" if turn_type == "agent" else "var(--q-primary)"
     with ui.card().classes("w-full").style(
@@ -278,6 +268,10 @@ def _render_turn_row(turn: Turn, expanded_turns: set[int]):
             ui.badge(turn_type, color=color).classes("text-xs")
             if tokens > 0:
                 ui.label(f"{tokens:,} tok").classes("text-xs text-grey-6")
+            if turn_cost > 0:
+                ui.label(f"~{_format_cost(turn_cost)}").classes("text-xs").style(
+                    "color: #00ff41; font-family: monospace;"
+                )
             if agent_count > 0:
                 ui.badge(
                     f"{agent_count} agent{'s' if agent_count != 1 else ''}",
@@ -343,8 +337,48 @@ def _render_turn_row(turn: Turn, expanded_turns: set[int]):
         exp.on_value_change(_on_toggle)
 
         with exp:
+            if tokens > 0:
+                _render_turn_token_breakdown(turn)
             for msg in turn.messages:
                 _render_message(msg)
+
+
+def _render_turn_token_breakdown(turn: Turn):
+    tb = turn.token_breakdown
+    total = tb["input_tokens"] + tb["output_tokens"]
+    if total == 0:
+        return
+
+    cache_read = tb["cache_read_input_tokens"]
+    cache_create = tb["cache_creation_input_tokens"]
+    all_input = tb["input_tokens"] + cache_read + cache_create
+    cache_ratio = cache_read / all_input if all_input > 0 else 0.0
+    turn_cost = turn.estimated_cost
+    cbt = turn.cost_by_type
+
+    with ui.element("div").classes("w-full mb-2").style(
+        "background: #0d0d1a; border: 1px solid #1a1a2a; "
+        "border-radius: 4px; padding: 8px 12px;"
+    ):
+        with ui.grid(columns=9).classes("gap-1"):
+            ui.label("Input:").classes("text-xs text-grey-7")
+            ui.label(f"{tb['input_tokens']:,}").classes("text-xs text-grey-5")
+            _cost_label(cbt["input"])
+            ui.label("Output:").classes("text-xs text-grey-7")
+            ui.label(f"{tb['output_tokens']:,}").classes("text-xs text-grey-5")
+            _cost_label(cbt["output"])
+            ui.label("Total:").classes("text-xs text-grey-7")
+            ui.label(f"{total:,}").classes("text-xs text-grey-5")
+            _cost_label(turn_cost)
+            ui.label("Cache Read:").classes("text-xs text-grey-7")
+            ui.label(f"{cache_read:,}").classes("text-xs text-grey-5")
+            _cost_label(cbt["cache_read"])
+            ui.label("Cache Create:").classes("text-xs text-grey-7")
+            ui.label(f"{cache_create:,}").classes("text-xs text-grey-5")
+            _cost_label(cbt["cache_create"])
+            ui.label("Cache Hit:").classes("text-xs text-grey-7")
+            ui.label(f"{cache_ratio:.1%}").classes("text-xs text-grey-5")
+            ui.label("").classes("text-xs")
 
 
 def _render_message(msg: Message):

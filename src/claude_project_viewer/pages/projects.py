@@ -4,9 +4,12 @@ import time
 
 from nicegui import run, ui
 
+from claude_project_viewer.config import get_session_paths
 from claude_project_viewer.discovery import (
+    ActiveSessionInfo,
     ProjectInfo,
     SessionInfo,
+    discover_active_sessions,
     discover_history,
     discover_projects,
 )
@@ -32,6 +35,8 @@ def create_projects_page():
                 "dense outline"
             )
 
+        active_container = ui.column().classes("w-full gap-2")
+
         history_container = ui.row().classes("w-full")
 
         filter_input = ui.input(
@@ -47,11 +52,23 @@ def create_projects_page():
 
         container = ui.column().classes("w-full gap-2")
 
+    async def _load_active(projects):
+        active = await run.io_bound(discover_active_sessions, projects)
+        active_container.clear()
+        if active:
+            with active_container:
+                ui.label("Active Sessions").classes("text-lg font-bold")
+                with ui.row().classes("w-full gap-2 flex-wrap"):
+                    for a in active:
+                        _render_active_card(a)
+
     async def _initial_load():
         await _load_projects(state, container, filter_input)
         total_projects = len(state["projects"])
         total_sessions = sum(p.session_count for p in state["projects"])
         stats_label.text = f"{total_projects} projects, {total_sessions} sessions"
+
+        await _load_active(state["projects"])
 
         history = await run.io_bound(discover_history)
         history_container.clear()
@@ -95,13 +112,14 @@ def create_projects_page():
                     changed = True
         if changed:
             await _load_projects(state, container, filter_input)
+            await _load_active(state["projects"])
 
     ui.timer(0.1, _initial_load, once=True)
     ui.timer(5.0, _poll_changes)
 
 
 async def _load_projects(state, container, filter_input):
-    projects = await run.io_bound(discover_projects)
+    projects = await run.io_bound(discover_projects, get_session_paths())
     state["projects"] = projects
 
     for project in projects:
@@ -153,3 +171,65 @@ def _render_project_card(project: ProjectInfo):
                         ui.label(f"Last active: {ago}").classes("text-xs text-grey-6")
 
             ui.icon("chevron_right").classes("text-grey-6")
+
+
+def _truncate(text: str, max_len: int = 120) -> str:
+    text = text.replace("\n", " ").strip()
+    if len(text) <= max_len:
+        return text
+    return text[:max_len] + "..."
+
+
+def _render_active_card(active: ActiveSessionInfo):
+    s = active.session
+    project = active.project_name
+    activity = get_activity_indicator(s.mtime)
+
+    url = f"/project/{project}/session/{s.session_id}"
+    with ui.card().classes("cursor-pointer").style(
+        "background: #0a0a0a; border: 1px solid #1a3a1a; "
+        "min-width: 340px; max-width: 480px; height: 220px; "
+        "padding: 12px 16px; overflow: hidden;"
+    ).on("click", lambda u=url: ui.navigate.to(u)):
+        with ui.row().classes("items-center gap-2 w-full"):
+            if activity:
+                color, icon = activity
+                ui.icon(icon).classes(f"text-{color} text-sm animate-pulse")
+            ui.icon("terminal").classes("text-sm").style("color: #00ff41;")
+            title = s.title or s.session_id[:12]
+            ui.label(title).classes("text-sm font-bold").style(
+                "color: #00ff41; font-family: monospace;"
+            )
+
+        with ui.row().classes("items-center gap-3"):
+            ui.label(project).classes("text-xs text-grey-7").style(
+                "font-family: monospace;"
+            )
+            ago = format_duration_ago(s.mtime)
+            ui.label(ago).classes("text-xs text-grey-8")
+
+        if active.exchanges:
+            with ui.column().classes("w-full gap-1 mt-2").style(
+                "overflow-y: auto; flex: 1;"
+            ):
+                for user_text, assistant_text in active.exchanges:
+                    if user_text:
+                        with ui.row().classes("items-start gap-1").style(
+                            "border-left: 2px solid #00ff41; padding-left: 8px;"
+                        ):
+                            ui.label("$").classes("text-xs").style(
+                                "color: #00ff41; font-family: monospace;"
+                            )
+                            ui.label(_truncate(user_text, 80)).classes(
+                                "text-xs"
+                            ).style("color: #b0b0b0; font-family: monospace;")
+                    if assistant_text:
+                        with ui.row().classes("items-start gap-1").style(
+                            "border-left: 2px solid #333; padding-left: 8px;"
+                        ):
+                            ui.label(">").classes("text-xs").style(
+                                "color: #666; font-family: monospace;"
+                            )
+                            ui.label(_truncate(assistant_text, 100)).classes(
+                                "text-xs"
+                            ).style("color: #808080; font-family: monospace;")

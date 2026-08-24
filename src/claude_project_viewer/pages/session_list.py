@@ -2,6 +2,7 @@
 
 from nicegui import run, ui
 
+from claude_project_viewer.config import get_session_paths
 from claude_project_viewer.discovery import discover_projects
 from claude_project_viewer.formatting import (
     format_duration_ago,
@@ -29,7 +30,7 @@ def create_session_list_page(project_name: str):
         container = ui.column().classes("w-full gap-2")
 
         async def load():
-            projects = await run.io_bound(discover_projects)
+            projects = await run.io_bound(discover_projects, get_session_paths())
             project = next((p for p in projects if p.name == project_name), None)
             if not project:
                 container.clear()

@@ -1,7 +1,10 @@
 """NiceGUI application — routes and dark theme."""
 
+from pathlib import Path
+
 from nicegui import app, ui
 
+from claude_project_viewer.config import set_session_paths
 from claude_project_viewer.pages.history import create_history_page
 from claude_project_viewer.pages.memory import create_memory_page
 from claude_project_viewer.pages.projects import create_projects_page
@@ -23,7 +26,9 @@ def _page_setup():
         ).classes("text-xs text-grey-7")
 
 
-def create_app():
+def create_app(session_paths: list[Path] | None = None):
+    if session_paths is not None:
+        set_session_paths(session_paths)
     @ui.page("/")
     def index():
         _page_setup()

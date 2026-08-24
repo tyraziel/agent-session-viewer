@@ -1,11 +1,14 @@
 """Entry point for claude-project-viewer."""
 
 import argparse
+import logging
 import os
+from pathlib import Path
 
 from nicegui import ui
 
 from claude_project_viewer.app import create_app
+from claude_project_viewer.config import load_config, resolve_session_paths
 
 
 def main():
@@ -17,12 +20,26 @@ def main():
         default=None,
         help="Path to Claude config directory (default: ~/.claude or CLAUDE_CONFIG_DIR)",
     )
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="Path to config file (default: ~/.config/claude-project-viewer/config.json)",
+    )
     args = parser.parse_args()
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)s %(name)s: %(message)s",
+    )
 
     if args.claude_dir:
         os.environ["CLAUDE_CONFIG_DIR"] = args.claude_dir
 
-    create_app()
+    config_path = Path(args.config) if args.config else None
+    config = load_config(config_path)
+    session_paths = resolve_session_paths(config)
+
+    create_app(session_paths=session_paths or None)
     ui.run(
         title="Claude Project Viewer",
         port=args.port,

@@ -41,10 +41,10 @@ def estimate_cost(
     cache_read_tokens: int = 0,
     cache_create_tokens: int = 0,
 ) -> float | None:
-    """Estimate cost in dollars. Returns None if model pricing unknown."""
+    """Estimate cost in dollars. Returns 0.0 if model pricing unknown."""
     pricing = get_pricing(model)
     if pricing is None:
-        return None
+        return 0.0
     return (
         input_tokens * pricing.input
         + output_tokens * pricing.output

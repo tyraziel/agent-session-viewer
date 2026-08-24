@@ -78,26 +78,39 @@ def discover_history(base_dir: Path | None = None) -> HistoryFile | None:
     return None
 
 
-def discover_projects(base_dir: Path | None = None) -> list[ProjectInfo]:
-    if base_dir is None:
-        base_dir = get_claude_base_dir()
+def discover_projects(
+    project_dirs: list[Path] | None = None,
+    base_dir: Path | None = None,
+) -> list[ProjectInfo]:
+    if project_dirs is not None:
+        dirs = project_dirs
+    else:
+        if base_dir is None:
+            base_dir = get_claude_base_dir()
+        dirs = [base_dir / "projects"]
 
-    projects_dir = base_dir / "projects"
-    if not projects_dir.is_dir():
-        return []
-
-    projects = []
-    for entry in sorted(projects_dir.iterdir()):
-        if not entry.is_dir():
+    projects_by_name: dict[str, ProjectInfo] = {}
+    for projects_dir in dirs:
+        if not projects_dir.is_dir():
             continue
-        sessions = _discover_sessions(entry)
-        if sessions:
-            projects.append(ProjectInfo(
-                name=entry.name,
-                path=entry,
-                sessions=sessions,
-            ))
+        for entry in sorted(projects_dir.iterdir()):
+            if not entry.is_dir():
+                continue
+            sessions = _discover_sessions(entry)
+            if sessions:
+                if entry.name in projects_by_name:
+                    projects_by_name[entry.name].sessions.extend(sessions)
+                    projects_by_name[entry.name].sessions.sort(
+                        key=lambda s: s.mtime, reverse=True,
+                    )
+                else:
+                    projects_by_name[entry.name] = ProjectInfo(
+                        name=entry.name,
+                        path=entry,
+                        sessions=sessions,
+                    )
 
+    projects = list(projects_by_name.values())
     projects.sort(key=lambda p: max(s.mtime for s in p.sessions), reverse=True)
     return projects
 
@@ -118,6 +131,113 @@ def _discover_sessions(project_dir: Path) -> list[SessionInfo]:
             ))
     sessions.sort(key=lambda s: s.mtime, reverse=True)
     return sessions
+
+
+@dataclass
+class ActiveSessionInfo:
+    session: SessionInfo
+    project_name: str
+    exchanges: list[tuple[str, str]] = field(default_factory=list)
+
+
+def discover_active_sessions(
+    projects: list[ProjectInfo] | None = None,
+    threshold: float = ACTIVE_THRESHOLD_SECONDS,
+) -> list["ActiveSessionInfo"]:
+    if projects is None:
+        projects = discover_projects()
+    active = []
+    for project in projects:
+        for session in project.sessions:
+            if (time.time() - session.mtime) < threshold:
+                exchanges = _extract_tail_exchanges(session.path)
+                active.append(ActiveSessionInfo(
+                    session=session,
+                    project_name=project.name,
+                    exchanges=exchanges,
+                ))
+    active.sort(key=lambda a: a.session.mtime, reverse=True)
+    return active
+
+
+def _extract_tail_exchanges(
+    path: Path, max_exchanges: int = 3,
+) -> list[tuple[str, str]]:
+    """Read the tail of a JSONL and return the last few (user, assistant) pairs."""
+    messages: list[tuple[str, str]] = []
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            chunk_size = min(size, 65536)
+            f.seek(size - chunk_size)
+            data = f.read().decode("utf-8", errors="replace")
+
+        user_texts: list[str] = []
+        assistant_texts: list[str] = []
+
+        for raw_line in reversed(data.strip().split("\n")):
+            raw_line = raw_line.strip()
+            if not raw_line:
+                continue
+            try:
+                obj = json.loads(raw_line)
+            except json.JSONDecodeError:
+                continue
+
+            line_type = obj.get("type", "")
+            text = _extract_line_text(obj, line_type)
+            if not text:
+                continue
+
+            if line_type == "assistant":
+                assistant_texts.append(text)
+            elif line_type in ("user", "queue-operation"):
+                user_texts.append(text)
+
+            if len(user_texts) >= max_exchanges and len(assistant_texts) >= max_exchanges:
+                break
+
+        user_texts.reverse()
+        assistant_texts.reverse()
+        for i in range(min(len(user_texts), len(assistant_texts))):
+            messages.append((user_texts[i], assistant_texts[i]))
+        if len(user_texts) > len(assistant_texts):
+            messages.append((user_texts[-1], ""))
+
+    except OSError:
+        pass
+    return messages[-max_exchanges:]
+
+
+def _extract_line_text(obj: dict, line_type: str) -> str:
+    if line_type == "assistant":
+        msg = obj.get("message", {})
+        content = msg.get("content", [])
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    text = block.get("text", "").strip()
+                    if text:
+                        return text
+    elif line_type == "user":
+        msg = obj.get("message", {})
+        content = msg.get("content", "")
+        if isinstance(content, str) and content.strip():
+            if "<task-notification>" not in content:
+                return content.strip()
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    text = block.get("text", "").strip()
+                    if text and "<task-notification>" not in text:
+                        return text
+    elif line_type == "queue-operation" and obj.get("operation") == "enqueue":
+        content = obj.get("content", "")
+        if isinstance(content, str) and content.strip():
+            if "<task-notification>" not in content:
+                return content.strip()
+    return ""
 
 
 def _extract_session_meta(path: Path) -> tuple[str, str]:
