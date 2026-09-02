@@ -9,14 +9,28 @@ from pathlib import Path
 ACTIVE_THRESHOLD_SECONDS = 900
 
 
+PROVIDER_RESUME_COMMANDS = {
+    "claude": "claude --resume {session_id}",
+    "codex": "codex --resume {session_id}",
+}
+
+PROVIDER_COLORS = {
+    "claude": "deep-orange",
+    "codex": "teal",
+}
+
+
 @dataclass
 class SessionInfo:
     session_id: str
     path: Path
     size_bytes: int
     mtime: float
+    provider: str = "claude"
     cwd: str = ""
     title: str = ""
+    turn_count: int = 0
+    api_call_count: int = 0
 
     @property
     def display_name(self) -> str:
@@ -31,7 +45,10 @@ class SessionInfo:
         parts = []
         if self.cwd:
             parts.append(f"cd {self.cwd}")
-        parts.append(f"claude --resume {self.session_id}")
+        template = PROVIDER_RESUME_COMMANDS.get(
+            self.provider, "claude --resume {session_id}",
+        )
+        parts.append(template.format(session_id=self.session_id))
         return " && ".join(parts)
 
 
@@ -39,6 +56,7 @@ class SessionInfo:
 class ProjectInfo:
     name: str
     path: Path
+    provider: str = "claude"
     sessions: list[SessionInfo] = field(default_factory=list)
 
     @property
@@ -76,6 +94,29 @@ def discover_history(base_dir: Path | None = None) -> HistoryFile | None:
         stat = history.stat()
         return HistoryFile(path=history, size_bytes=stat.st_size, mtime=stat.st_mtime)
     return None
+
+
+def discover_all_projects() -> list[ProjectInfo]:
+    """Discover projects from all registered providers."""
+    from claude_project_viewer.app import get_config
+    from claude_project_viewer.config import resolve_provider_paths
+    from claude_project_viewer.providers import get_all_providers
+
+    config = get_config()
+    all_projects: list[ProjectInfo] = []
+
+    for provider in get_all_providers():
+        paths = resolve_provider_paths(config, provider.slug, provider.default_paths())
+        if not paths:
+            continue
+        projects = provider.discover_projects(paths)
+        all_projects.extend(projects)
+
+    all_projects.sort(
+        key=lambda p: max(s.mtime for s in p.sessions) if p.sessions else 0,
+        reverse=True,
+    )
+    return all_projects
 
 
 def discover_projects(
@@ -121,6 +162,7 @@ def _discover_sessions(project_dir: Path) -> list[SessionInfo]:
         if f.suffix == ".jsonl" and f.is_file():
             stat = f.stat()
             cwd, title = _extract_session_meta(f)
+            turn_count, api_call_count = _count_turns_and_api_calls(f)
             sessions.append(SessionInfo(
                 session_id=f.stem,
                 path=f,
@@ -128,6 +170,8 @@ def _discover_sessions(project_dir: Path) -> list[SessionInfo]:
                 mtime=stat.st_mtime,
                 cwd=cwd,
                 title=title,
+                turn_count=turn_count,
+                api_call_count=api_call_count,
             ))
     sessions.sort(key=lambda s: s.mtime, reverse=True)
     return sessions
@@ -144,13 +188,19 @@ def discover_active_sessions(
     projects: list[ProjectInfo] | None = None,
     threshold: float = ACTIVE_THRESHOLD_SECONDS,
 ) -> list["ActiveSessionInfo"]:
+    from claude_project_viewer.providers import get_provider
+
     if projects is None:
-        projects = discover_projects()
+        projects = discover_all_projects()
     active = []
     for project in projects:
         for session in project.sessions:
             if (time.time() - session.mtime) < threshold:
-                exchanges = _extract_tail_exchanges(session.path)
+                provider = get_provider(session.provider)
+                if provider:
+                    exchanges = provider.extract_tail_exchanges(session.path)
+                else:
+                    exchanges = _extract_tail_exchanges(session.path)
                 active.append(ActiveSessionInfo(
                     session=session,
                     project_name=project.name,
@@ -238,6 +288,70 @@ def _extract_line_text(obj: dict, line_type: str) -> str:
             if "<task-notification>" not in content:
                 return content.strip()
     return ""
+
+
+def _count_turns_and_api_calls(path: Path) -> tuple[int, int]:
+    """Count turns (user messages with text) and API calls (unique requestIds).
+
+    Matches the parser's turn-splitting logic: every user message or
+    queue-operation enqueue with text content starts a new turn.
+    """
+    turns = 0
+    request_ids: set[str] = set()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                if '"type":"assistant"' in line:
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if obj.get("type") == "assistant":
+                        rid = obj.get("requestId", "")
+                        if rid:
+                            request_ids.add(rid)
+                elif '"type":"user"' in line:
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if obj.get("type") != "user":
+                        continue
+                    origin = obj.get("origin", {})
+                    if origin.get("kind") == "task-notification":
+                        continue
+                    msg = obj.get("message", {})
+                    content = msg.get("content", "")
+                    if isinstance(content, str) and content.strip():
+                        if "<task-notification>" not in content:
+                            turns += 1
+                    elif isinstance(content, list):
+                        has_text = any(
+                            isinstance(b, dict)
+                            and b.get("type") == "text"
+                            and b.get("text", "").strip()
+                            for b in content
+                            if isinstance(b, dict) and b.get("type") != "tool_result"
+                        )
+                        if has_text:
+                            turns += 1
+                elif '"queue-operation"' in line:
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if (obj.get("type") == "queue-operation"
+                            and obj.get("operation") == "enqueue"):
+                        content = obj.get("content", "")
+                        if (isinstance(content, str) and content.strip()
+                                and "<task-notification>" not in content):
+                            turns += 1
+    except OSError:
+        pass
+    return turns, len(request_ids)
 
 
 def _extract_session_meta(path: Path) -> tuple[str, str]:

@@ -4,13 +4,15 @@ from pathlib import Path
 
 from nicegui import run, ui
 
-from claude_project_viewer.config import get_session_paths
-from claude_project_viewer.discovery import discover_projects
-from claude_project_viewer.formatting import format_duration_ago, get_activity_indicator
+from claude_project_viewer.discovery import discover_all_projects
+from claude_project_viewer.providers import get_provider
+from claude_project_viewer.formatting import format_duration, format_duration_ago, get_activity_indicator
 from claude_project_viewer.parser import Message, Session, SubAgentInfo, Turn, parse_session
 
 
-def create_session_detail_page(project_name: str, session_id: str):
+def create_session_detail_page(
+    project_name: str, session_id: str, provider: str = "claude",
+):
     state = {"session": None, "last_mtime": 0.0, "session_path": None}
     expanded_turns: set[int] = set()
 
@@ -18,7 +20,9 @@ def create_session_detail_page(project_name: str, session_id: str):
         with ui.row().classes("items-center gap-2 w-full"):
             ui.button(
                 icon="arrow_back",
-                on_click=lambda: ui.navigate.to(f"/project/{project_name}"),
+                on_click=lambda: ui.navigate.to(
+                    f"/{provider}/project/{project_name}"
+                ),
             ).props("dense flat")
             header_label = ui.label("Loading...").classes("text-2xl font-bold")
 
@@ -38,8 +42,12 @@ def create_session_detail_page(project_name: str, session_id: str):
         turns_container = ui.column().classes("w-full gap-1")
 
     async def load():
-        projects = await run.io_bound(discover_projects, get_session_paths())
-        project = next((p for p in projects if p.name == project_name), None)
+        projects = await run.io_bound(discover_all_projects)
+        project = next(
+            (p for p in projects
+             if p.name == project_name and p.provider == provider),
+            None,
+        )
         if not project:
             header_label.text = "Project not found"
             return
@@ -54,7 +62,10 @@ def create_session_detail_page(project_name: str, session_id: str):
         state["session_path"] = session_info.path
         state["resume_command"] = session_info.resume_command
         state["title"] = session_info.title
-        session = await run.io_bound(parse_session, session_info.path)
+        state["provider"] = provider
+        prov = get_provider(provider)
+        parse_fn = prov.parse_session if prov else parse_session
+        session = await run.io_bound(parse_fn, session_info.path)
         state["session"] = session
         state["last_mtime"] = session_info.mtime
 
@@ -76,7 +87,9 @@ def create_session_detail_page(project_name: str, session_id: str):
             return
         if current_mtime != state["last_mtime"]:
             state["last_mtime"] = current_mtime
-            session = await run.io_bound(parse_session, path)
+            prov = get_provider(state.get("provider", "claude"))
+            parse_fn = prov.parse_session if prov else parse_session
+            session = await run.io_bound(parse_fn, path)
             state["session"] = session
             _render_session(
                 session, header_label, meta_row, summary_container,
@@ -134,7 +147,23 @@ def _render_session(
         if activity:
             color, icon = activity
             ui.icon(icon).classes(f"text-{color} animate-pulse")
+        total_tools = sum(
+            len(tc) for turn in session.turns
+            for m in turn.messages for tc in [m.tool_calls] if tc
+        )
         ui.badge(f"{session.total_turns} turns", color="primary").classes("text-xs")
+        ui.badge(f"{session.api_call_count} API calls", color="grey").classes("text-xs")
+        if total_tools > 0:
+            ui.badge(
+                f"{total_tools} tool call{'s' if total_tools != 1 else ''}",
+                color="orange",
+            ).classes("text-xs")
+        total_dur = session.total_duration_seconds
+        if total_dur > 0:
+            ui.badge(
+                f"{format_duration(total_dur)} model time",
+                color="blue-grey",
+            ).classes("text-xs")
         ago = format_duration_ago(mtime)
         ui.label(f"Last active: {ago}").classes("text-xs text-grey-6")
         ui.label(session.session_id).classes("text-xs text-grey-6").style(
@@ -258,6 +287,8 @@ def _render_turn_row(turn: Turn, expanded_turns: set[int]):
         1 for m in turn.messages for tc in m.tool_calls if tc.tool_name == "Agent"
     )
     turn_cost = turn.estimated_cost
+    api_calls = turn.api_call_count
+    turn_dur = turn.duration_seconds
 
     border_color = "#9c27b0" if turn_type == "agent" else "var(--q-primary)"
     with ui.card().classes("w-full").style(
@@ -272,6 +303,11 @@ def _render_turn_row(turn: Turn, expanded_turns: set[int]):
                 ui.label(f"~{_format_cost(turn_cost)}").classes("text-xs").style(
                     "color: #00ff41; font-family: monospace;"
                 )
+            if api_calls > 0:
+                ui.badge(
+                    f"{api_calls} API call{'s' if api_calls != 1 else ''}",
+                    color="grey",
+                ).classes("text-xs")
             if agent_count > 0:
                 ui.badge(
                     f"{agent_count} agent{'s' if agent_count != 1 else ''}",
@@ -281,6 +317,10 @@ def _render_turn_row(turn: Turn, expanded_turns: set[int]):
                 ui.badge(
                     f"{tool_count} tool{'s' if tool_count != 1 else ''}",
                     color="orange",
+                ).classes("text-xs")
+            if turn_dur > 0:
+                ui.badge(
+                    format_duration(turn_dur), color="blue-grey",
                 ).classes("text-xs")
 
         # conversation recap

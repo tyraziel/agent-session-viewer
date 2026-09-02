@@ -3,6 +3,7 @@
 import json
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -104,6 +105,32 @@ class Turn:
         return ""
 
     @property
+    def duration_seconds(self) -> float:
+        """Wall time the model was working, excluding idle gaps > 10 minutes."""
+        timestamps: list[datetime] = []
+        for m in self.messages:
+            ts_str = (
+                m.raw.get("timestamp")
+                or m.raw.get("payload", {}).get("timestamp", "")
+            )
+            if not ts_str:
+                continue
+            try:
+                timestamps.append(
+                    datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                )
+            except (ValueError, TypeError):
+                continue
+        if len(timestamps) < 2:
+            return 0.0
+        total = 0.0
+        for i in range(1, len(timestamps)):
+            gap = (timestamps[i] - timestamps[i - 1]).total_seconds()
+            if gap <= 600:
+                total += gap
+        return total
+
+    @property
     def total_tokens(self) -> int:
         total = 0
         for m in self.messages:
@@ -123,6 +150,21 @@ class Turn:
             for key in totals:
                 totals[key] += m.usage.get(key, 0)
         return totals
+
+    @property
+    def api_call_count(self) -> int:
+        ids = set()
+        for m in self.messages:
+            if m.role != "assistant":
+                continue
+            rid = m.raw.get("requestId")
+            if rid:
+                ids.add(rid)
+            else:
+                pid = m.raw.get("payload", {}).get("id", "")
+                if pid:
+                    ids.add(pid)
+        return len(ids)
 
     @property
     def cost_by_type(self) -> dict[str, float]:
@@ -171,6 +213,10 @@ class Session:
         return totals
 
     @property
+    def total_duration_seconds(self) -> float:
+        return sum(turn.duration_seconds for turn in self.turns)
+
+    @property
     def total_subagent_tokens(self) -> int:
         total = 0
         for turn in self.turns:
@@ -191,6 +237,10 @@ class Session:
             for key in totals:
                 totals[key] += turn_cbt[key]
         return totals
+
+    @property
+    def api_call_count(self) -> int:
+        return sum(turn.api_call_count for turn in self.turns)
 
     @property
     def total_turns(self) -> int:

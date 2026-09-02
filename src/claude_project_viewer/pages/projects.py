@@ -4,14 +4,14 @@ import time
 
 from nicegui import run, ui
 
-from claude_project_viewer.config import get_session_paths
 from claude_project_viewer.discovery import (
+    PROVIDER_COLORS,
     ActiveSessionInfo,
     ProjectInfo,
     SessionInfo,
     discover_active_sessions,
+    discover_all_projects,
     discover_history,
-    discover_projects,
 )
 from claude_project_viewer.formatting import (
     format_duration_ago,
@@ -25,11 +25,11 @@ def create_projects_page():
 
     with ui.column().classes("w-full max-w-6xl mx-auto p-6 gap-4"):
         with ui.row().classes("items-center gap-4 w-full"):
-            ui.label("Claude Project Viewer").classes("text-2xl font-bold")
+            ui.label("Session Viewer").classes("text-2xl font-bold")
             ui.space()
 
             async def _refresh():
-                await _load_projects(state, container, filter_input)
+                await _load_projects(state, container, filter_input, state.get("provider_select"))
 
             ui.button("Refresh", icon="refresh", on_click=_refresh).props(
                 "dense outline"
@@ -39,13 +39,26 @@ def create_projects_page():
 
         history_container = ui.row().classes("w-full")
 
-        filter_input = ui.input(
-            label="Filter projects",
-            placeholder="Type to filter...",
-        ).classes("w-full")
-        filter_input.on("update:model-value", lambda: _apply_filter(
-            state["projects"], container, filter_input
-        ))
+        with ui.row().classes("w-full gap-2 items-end"):
+            filter_input = ui.input(
+                label="Filter projects",
+                placeholder="Type to filter...",
+            ).classes("flex-grow")
+            provider_select = ui.select(
+                options={"all": "All", "claude": "Claude", "codex": "Codex"},
+                value="all",
+                label="Provider",
+            ).classes("w-32")
+
+        state["provider_select"] = provider_select
+
+        def _on_filter_change():
+            _apply_filter(
+                state["projects"], container, filter_input, provider_select,
+            )
+
+        filter_input.on("update:model-value", _on_filter_change)
+        provider_select.on("update:model-value", _on_filter_change)
 
         with ui.row().classes("w-full gap-2"):
             stats_label = ui.label("").classes("text-xs text-grey-6")
@@ -63,7 +76,7 @@ def create_projects_page():
                         _render_active_card(a)
 
     async def _initial_load():
-        await _load_projects(state, container, filter_input)
+        await _load_projects(state, container, filter_input, provider_select)
         total_projects = len(state["projects"])
         total_sessions = sum(p.session_count for p in state["projects"])
         stats_label.text = f"{total_projects} projects, {total_sessions} sessions"
@@ -80,7 +93,7 @@ def create_projects_page():
                     with ui.row().classes("items-center gap-3 w-full"):
                         ui.icon("history").classes("text-amber text-lg")
                         with ui.column().classes("gap-0 flex-grow"):
-                            ui.label("Conversation History").classes(
+                            ui.label("Claude Conversation History").classes(
                                 "font-bold text-sm"
                             )
                             with ui.row().classes("gap-4"):
@@ -111,29 +124,32 @@ def create_projects_page():
                     state["last_mtimes"][key] = current_mtime
                     changed = True
         if changed:
-            await _load_projects(state, container, filter_input)
+            await _load_projects(state, container, filter_input, provider_select)
             await _load_active(state["projects"])
 
     ui.timer(0.1, _initial_load, once=True)
     ui.timer(5.0, _poll_changes)
 
 
-async def _load_projects(state, container, filter_input):
-    projects = await run.io_bound(discover_projects, get_session_paths())
+async def _load_projects(state, container, filter_input, provider_select):
+    projects = await run.io_bound(discover_all_projects)
     state["projects"] = projects
 
     for project in projects:
         for session in project.sessions:
             state["last_mtimes"][str(session.path)] = session.mtime
 
-    _apply_filter(projects, container, filter_input)
+    _apply_filter(projects, container, filter_input, provider_select)
 
 
-def _apply_filter(projects, container, filter_input):
+def _apply_filter(projects, container, filter_input, provider_select=None):
     pattern = (filter_input.value or "").strip().lower()
+    provider_filter = (provider_select.value if provider_select else "all") or "all"
     filtered = projects
+    if provider_filter != "all":
+        filtered = [p for p in filtered if p.provider == provider_filter]
     if pattern:
-        filtered = [p for p in projects if pattern in p.name.lower()]
+        filtered = [p for p in filtered if pattern in p.name.lower()]
 
     container.clear()
     with container:
@@ -147,9 +163,13 @@ def _apply_filter(projects, container, filter_input):
 def _render_project_card(project: ProjectInfo):
     latest_session = project.sessions[0] if project.sessions else None
     total_size = sum(s.size_bytes for s in project.sessions)
+    provider = project.provider
+    badge_color = PROVIDER_COLORS.get(provider, "grey")
 
     with ui.card().classes("w-full cursor-pointer").on(
-        "click", lambda p=project: ui.navigate.to(f"/project/{p.name}")
+        "click", lambda p=project: ui.navigate.to(
+            f"/{p.provider}/project/{p.name}"
+        )
     ):
         with ui.row().classes("items-center gap-3 w-full"):
             latest = project.sessions[0] if project.sessions else None
@@ -160,12 +180,14 @@ def _render_project_card(project: ProjectInfo):
             else:
                 ui.icon("folder").classes("text-primary text-lg")
             with ui.column().classes("gap-0 flex-grow"):
-                ui.label(project.name).classes("font-bold text-sm")
+                with ui.row().classes("items-center gap-2"):
+                    ui.label(project.name).classes("font-bold text-sm")
+                    ui.badge(provider, color=badge_color).classes("text-xs")
                 with ui.row().classes("gap-4"):
                     ui.label(
                         f"{project.session_count} session{'s' if project.session_count != 1 else ''}"
                     ).classes("text-xs text-grey-6")
-                    ui.label(format_size(total_size)).classes("text-xs text-grey-6")
+                    ui.label(f"Project File Size: {format_size(total_size)}").classes("text-xs text-grey-6")
                     if latest_session:
                         ago = format_duration_ago(latest_session.mtime)
                         ui.label(f"Last active: {ago}").classes("text-xs text-grey-6")
@@ -185,7 +207,9 @@ def _render_active_card(active: ActiveSessionInfo):
     project = active.project_name
     activity = get_activity_indicator(s.mtime)
 
-    url = f"/project/{project}/session/{s.session_id}"
+    provider = s.provider
+    badge_color = PROVIDER_COLORS.get(provider, "grey")
+    url = f"/{provider}/project/{project}/session/{s.session_id}"
     with ui.card().classes("cursor-pointer").style(
         "background: #0a0a0a; border: 1px solid #1a3a1a; "
         "min-width: 340px; max-width: 480px; height: 220px; "
@@ -200,6 +224,7 @@ def _render_active_card(active: ActiveSessionInfo):
             ui.label(title).classes("text-sm font-bold").style(
                 "color: #00ff41; font-family: monospace;"
             )
+            ui.badge(provider, color=badge_color).classes("text-xs")
 
         with ui.row().classes("items-center gap-3"):
             ui.label(project).classes("text-xs text-grey-7").style(

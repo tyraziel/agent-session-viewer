@@ -2,8 +2,7 @@
 
 from nicegui import run, ui
 
-from claude_project_viewer.config import get_session_paths
-from claude_project_viewer.discovery import discover_projects
+from claude_project_viewer.discovery import discover_all_projects
 from claude_project_viewer.formatting import (
     format_duration_ago,
     format_size,
@@ -11,7 +10,7 @@ from claude_project_viewer.formatting import (
 )
 
 
-def create_session_list_page(project_name: str):
+def create_session_list_page(project_name: str, provider: str = "claude"):
     state = {"sessions": []}
 
     with ui.column().classes("w-full max-w-6xl mx-auto p-6 gap-4"):
@@ -23,15 +22,21 @@ def create_session_list_page(project_name: str):
             ui.space()
             ui.button(
                 "Memory", icon="psychology",
-                on_click=lambda: ui.navigate.to(f"/project/{project_name}/memory"),
+                on_click=lambda: ui.navigate.to(
+                    f"/{provider}/project/{project_name}/memory"
+                ),
             ).props("dense outline")
 
         stats_label = ui.label("").classes("text-xs text-grey-6")
         container = ui.column().classes("w-full gap-2")
 
         async def load():
-            projects = await run.io_bound(discover_projects, get_session_paths())
-            project = next((p for p in projects if p.name == project_name), None)
+            projects = await run.io_bound(discover_all_projects)
+            project = next(
+                (p for p in projects
+                 if p.name == project_name and p.provider == provider),
+                None,
+            )
             if not project:
                 container.clear()
                 with container:
@@ -39,12 +44,12 @@ def create_session_list_page(project_name: str):
                 return
 
             state["sessions"] = project.sessions
-            _render(project.sessions, container, stats_label)
+            _render(project.sessions, container, stats_label, provider, project_name)
 
         ui.timer(0.1, load, once=True)
 
 
-def _render(sessions, container, stats_label):
+def _render(sessions, container, stats_label, provider, project_name):
     total = len(sessions)
     stats_label.text = f"{total} session{'s' if total != 1 else ''}"
 
@@ -57,12 +62,11 @@ def _render(sessions, container, stats_label):
         for session in sessions:
             ago = format_duration_ago(session.mtime)
             size = format_size(session.size_bytes)
-            project_name = session.path.parent.name
 
             with ui.card().classes("w-full cursor-pointer").on(
                 "click",
-                lambda s=session, pn=project_name: ui.navigate.to(
-                    f"/project/{pn}/session/{s.session_id}"
+                lambda s=session, pn=project_name, pv=provider: ui.navigate.to(
+                    f"/{pv}/project/{pn}/session/{s.session_id}"
                 ),
             ):
                 with ui.row().classes("items-center gap-3 w-full"):
@@ -74,13 +78,39 @@ def _render(sessions, container, stats_label):
                         ui.icon("chat").classes("text-grey-6 text-lg")
                     with ui.column().classes("gap-0 flex-grow"):
                         if session.title:
-                            ui.label(session.title).classes("font-bold text-sm")
-                        ui.label(session.session_id).classes(
-                            "text-xs text-grey-5" if session.title else "font-bold text-sm"
-                        ).style("font-family: monospace")
-                        with ui.row().classes("gap-4"):
-                            ui.label(size).classes("text-xs text-grey-6")
-                            ui.label(ago).classes("text-xs text-grey-6")
+                            with ui.row().classes("items-center gap-2"):
+                                ui.label(session.title).classes("font-bold text-sm")
+                                if session.turn_count > 0:
+                                    ui.badge(
+                                        f"{session.turn_count} turn{'s' if session.turn_count != 1 else ''}",
+                                        color="primary",
+                                    ).classes("text-xs")
+                                if session.api_call_count > 0:
+                                    ui.badge(
+                                        f"{session.api_call_count} API call{'s' if session.api_call_count != 1 else ''}",
+                                        color="grey",
+                                    ).classes("text-xs")
+                            ui.label(session.session_id).classes(
+                                "text-xs text-grey-5"
+                            ).style("font-family: monospace")
+                        else:
+                            with ui.row().classes("items-center gap-2"):
+                                ui.label(session.session_id).classes(
+                                    "font-bold text-sm"
+                                ).style("font-family: monospace")
+                                if session.turn_count > 0:
+                                    ui.badge(
+                                        f"{session.turn_count} turn{'s' if session.turn_count != 1 else ''}",
+                                        color="primary",
+                                    ).classes("text-xs")
+                                if session.api_call_count > 0:
+                                    ui.badge(
+                                        f"{session.api_call_count} API call{'s' if session.api_call_count != 1 else ''}",
+                                        color="grey",
+                                    ).classes("text-xs")
+                        with ui.row().classes("gap-4 items-center"):
+                            ui.label(f"Session File Size: {size}").classes("text-xs text-grey-6")
+                            ui.label(f"Last Active: {ago}").classes("text-xs text-grey-6")
                         cmd = session.resume_command
                         with ui.row().classes("items-center gap-1 mt-1"):
                             ui.label(cmd).classes("text-xs text-grey-5").style(

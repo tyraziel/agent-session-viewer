@@ -8,11 +8,14 @@ from pathlib import Path
 from nicegui import ui
 
 from claude_project_viewer.app import create_app
-from claude_project_viewer.config import load_config, resolve_session_paths
+from claude_project_viewer.config import load_config
+from claude_project_viewer.providers import register_provider
+from claude_project_viewer.providers.claude import ClaudeProvider
+from claude_project_viewer.providers.codex import CodexProvider
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Claude Project Viewer")
+    parser = argparse.ArgumentParser(description="Session Viewer")
     parser.add_argument("--port", type=int, default=8090)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument(
@@ -37,11 +40,13 @@ def main():
 
     config_path = Path(args.config) if args.config else None
     config = load_config(config_path)
-    session_paths = resolve_session_paths(config)
 
-    create_app(session_paths=session_paths or None)
+    register_provider(ClaudeProvider())
+    register_provider(CodexProvider())
+
+    create_app(config=config)
     ui.run(
-        title="Claude Project Viewer",
+        title="Session Viewer",
         port=args.port,
         host=args.host,
         reload=False,
