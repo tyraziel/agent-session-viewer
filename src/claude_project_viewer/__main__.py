@@ -12,6 +12,7 @@ from claude_project_viewer.config import load_config
 from claude_project_viewer.providers import register_provider
 from claude_project_viewer.providers.claude import ClaudeProvider
 from claude_project_viewer.providers.codex import CodexProvider
+from claude_project_viewer.providers.opencode import OpencodeProvider
 
 
 def main():
@@ -43,6 +44,7 @@ def main():
 
     register_provider(ClaudeProvider())
     register_provider(CodexProvider())
+    register_provider(OpencodeProvider())
 
     create_app(config=config)
     ui.run(

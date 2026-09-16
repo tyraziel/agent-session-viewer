@@ -7,12 +7,14 @@ from nicegui import run, ui
 from claude_project_viewer.discovery import get_claude_base_dir
 
 
-def create_memory_page(project_name: str):
+def create_memory_page(project_name: str, provider: str = "claude"):
     with ui.column().classes("w-full max-w-6xl mx-auto p-6 gap-4"):
         with ui.row().classes("items-center gap-2 w-full"):
             ui.button(
                 icon="arrow_back",
-                on_click=lambda: ui.navigate.to(f"/project/{project_name}"),
+                on_click=lambda: ui.navigate.to(
+                    f"/{provider}/project/{project_name}"
+                ),
             ).props("dense flat")
             ui.label("Memory").classes("text-2xl font-bold")
             ui.space()
@@ -23,6 +25,13 @@ def create_memory_page(project_name: str):
         container = ui.column().classes("w-full gap-3")
 
     async def load():
+        if provider != "claude":
+            container.clear()
+            with container:
+                ui.label(
+                    "Memory browsing is only available for Claude projects."
+                ).classes("text-grey-6")
+            return
         memories = await run.io_bound(_discover_memories, project_name)
         container.clear()
         with container:

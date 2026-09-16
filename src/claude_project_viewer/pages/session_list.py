@@ -32,6 +32,8 @@ def create_session_list_page(project_name: str, provider: str = "claude"):
 
         async def load():
             projects = await run.io_bound(discover_all_projects)
+            if projects is None:
+                return
             project = next(
                 (p for p in projects
                  if p.name == project_name and p.provider == provider),

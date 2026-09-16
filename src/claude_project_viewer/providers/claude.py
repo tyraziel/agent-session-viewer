@@ -75,11 +75,11 @@ class ClaudeProvider(ProviderBase):
         sessions.sort(key=lambda s: s.mtime, reverse=True)
         return sessions
 
-    def parse_session(self, path: Path) -> Session:
+    def parse_session(self, path: Path, session_id: str | None = None) -> Session:
         return parse_session(path)
 
     def extract_tail_exchanges(
-        self, path: Path, max_exchanges: int = 3,
+        self, path: Path, max_exchanges: int = 3, session_id: str | None = None,
     ) -> list[tuple[str, str]]:
         return _extract_tail_exchanges(path, max_exchanges)
 

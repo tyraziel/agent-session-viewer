@@ -62,6 +62,8 @@ def create_history_page():
         state["last_mtime"] = history.mtime
 
         entries = await run.io_bound(_read_history, history.path)
+        if entries is None:
+            return
         state["entries"] = entries
 
         projects = sorted({e.get("project", "") for e in entries if e.get("project")})

@@ -18,6 +18,7 @@ from claude_project_viewer.formatting import (
     format_size,
     get_activity_indicator,
 )
+from claude_project_viewer.providers import get_all_providers
 
 
 def create_projects_page():
@@ -44,8 +45,11 @@ def create_projects_page():
                 label="Filter projects",
                 placeholder="Type to filter...",
             ).classes("flex-grow")
+            provider_options = {"all": "All"}
+            for prov in get_all_providers():
+                provider_options[prov.slug] = prov.name
             provider_select = ui.select(
-                options={"all": "All", "claude": "Claude", "codex": "Codex"},
+                options=provider_options,
                 value="all",
                 label="Provider",
             ).classes("w-32")
@@ -133,6 +137,8 @@ def create_projects_page():
 
 async def _load_projects(state, container, filter_input, provider_select):
     projects = await run.io_bound(discover_all_projects)
+    if projects is None:
+        return
     state["projects"] = projects
 
     for project in projects:

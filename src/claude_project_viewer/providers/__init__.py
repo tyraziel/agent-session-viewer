@@ -28,12 +28,16 @@ class ProviderBase(ABC):
         """Discover projects from the given directories."""
 
     @abstractmethod
-    def parse_session(self, path: Path) -> Session:
-        """Full parse of a session file."""
+    def parse_session(self, path: Path, session_id: str | None = None) -> Session:
+        """Full parse of a session.
+
+        ``session_id`` disambiguates sessions stored together (e.g. one
+        SQLite DB holding many sessions); file-based providers ignore it.
+        """
 
     @abstractmethod
     def extract_tail_exchanges(
-        self, path: Path, max_exchanges: int = 3,
+        self, path: Path, max_exchanges: int = 3, session_id: str | None = None,
     ) -> list[tuple[str, str]]:
         """Quick tail-read for active session cards."""
 

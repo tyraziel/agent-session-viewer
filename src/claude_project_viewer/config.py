@@ -88,20 +88,9 @@ def resolve_provider_paths(
                     paths.append(dp)
         return _dedup(paths)
 
-    # No per-provider config — use legacy flat config or defaults
+    # No per-provider config — use legacy flat config (claude) or defaults
     if config.session_paths and provider_slug == "claude":
-        paths = list(config.session_paths)
-        if config.include_default:
-            claude_config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
-            if claude_config_dir:
-                paths.append(Path(claude_config_dir) / "projects")
-            else:
-                paths.extend(default_paths)
-        elif os.environ.get("CLAUDE_CONFIG_DIR"):
-            log.info(
-                "CLAUDE_CONFIG_DIR is set but include_default is false, skipping",
-            )
-        return _dedup(paths)
+        return _resolve_legacy_paths(config, default_paths)
 
     # Default: use provider's built-in paths
     if provider_slug == "claude":
@@ -112,6 +101,23 @@ def resolve_provider_paths(
     for dp in default_paths:
         log.info("Including default path for %s: %s", provider_slug, dp)
     return list(default_paths)
+
+
+def _resolve_legacy_paths(
+    config: Config, default_paths: list[Path],
+) -> list[Path]:
+    paths = list(config.session_paths)
+    if config.include_default:
+        claude_config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+        if claude_config_dir:
+            paths.append(Path(claude_config_dir) / "projects")
+        else:
+            paths.extend(default_paths)
+    elif os.environ.get("CLAUDE_CONFIG_DIR"):
+        log.info(
+            "CLAUDE_CONFIG_DIR is set but include_default is false, skipping",
+        )
+    return _dedup(paths)
 
 
 def _dedup(paths: list[Path]) -> list[Path]:

@@ -116,19 +116,23 @@ class CodexProvider(ProviderBase):
         )
         return projects
 
-    def parse_session(self, path: Path) -> Session:
+    def parse_session(self, path: Path, session_id: str | None = None) -> Session:
         return _parse_codex_session(path)
 
     def extract_tail_exchanges(
-        self, path: Path, max_exchanges: int = 3,
+        self, path: Path, max_exchanges: int = 3, session_id: str | None = None,
     ) -> list[tuple[str, str]]:
         return _extract_codex_tail(path, max_exchanges)
 
     def get_pricing(self, model: str) -> ModelPricing | None:
-        for prefix, pricing in _CODEX_PRICING.items():
-            if model.startswith(prefix):
-                return pricing
-        return None
+        return get_codex_pricing(model)
+
+
+def get_codex_pricing(model: str) -> ModelPricing | None:
+    for prefix in sorted(_CODEX_PRICING, key=len, reverse=True):
+        if model.startswith(prefix):
+            return _CODEX_PRICING[prefix]
+    return None
 
 
 def _parse_filename(name: str) -> tuple[str, str]:

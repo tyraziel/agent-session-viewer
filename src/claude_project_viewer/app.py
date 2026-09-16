@@ -52,7 +52,7 @@ def create_app(config: Config | None = None):
     @ui.page("/{provider}/project/{project_name}/memory")
     def project_memory(provider: str, project_name: str):
         _page_setup()
-        create_memory_page(project_name)
+        create_memory_page(project_name, provider)
 
     @ui.page("/{provider}/project/{project_name}/session/{session_id}")
     def session_detail(provider: str, project_name: str, session_id: str):

@@ -43,6 +43,8 @@ def create_session_detail_page(
 
     async def load():
         projects = await run.io_bound(discover_all_projects)
+        if projects is None:
+            return
         project = next(
             (p for p in projects
              if p.name == project_name and p.provider == provider),
@@ -64,15 +66,16 @@ def create_session_detail_page(
         state["title"] = session_info.title
         state["provider"] = provider
         prov = get_provider(provider)
-        parse_fn = prov.parse_session if prov else parse_session
-        session = await run.io_bound(parse_fn, session_info.path)
+        session = await run.io_bound(
+            _parse, prov, session_info.path, session_id,
+        )
         state["session"] = session
         state["last_mtime"] = session_info.mtime
 
         _render_session(
             session, header_label, meta_row, summary_container,
             turns_container, turns_label, expanded_turns, session_info.mtime,
-            state["resume_command"], state["title"], limit_select,
+            state["resume_command"], state["title"], limit_select, prov,
         )
 
     async def poll():
@@ -88,14 +91,17 @@ def create_session_detail_page(
         if current_mtime != state["last_mtime"]:
             state["last_mtime"] = current_mtime
             prov = get_provider(state.get("provider", "claude"))
-            parse_fn = prov.parse_session if prov else parse_session
-            session = await run.io_bound(parse_fn, path)
+            session = await run.io_bound(
+                _parse, prov, path, session_id,
+            )
+            if session is None:
+                return
             state["session"] = session
             _render_session(
                 session, header_label, meta_row, summary_container,
                 turns_container, turns_label, expanded_turns, current_mtime,
                 state.get("resume_command", ""), state.get("title", ""),
-                limit_select,
+                limit_select, prov,
             )
 
     def _on_limit_change():
@@ -109,6 +115,12 @@ def create_session_detail_page(
 
     ui.timer(0.1, load, once=True)
     ui.timer(3.0, poll)
+
+
+def _parse(prov, path, session_id: str) -> Session:
+    if prov:
+        return prov.parse_session(path, session_id=session_id)
+    return parse_session(path)
 
 
 def _get_turn_conversation(turn: Turn) -> list[tuple[str, str]]:
@@ -134,7 +146,9 @@ def _render_session(
     resume_command: str = "",
     title: str = "",
     limit_select=None,
+    prov=None,
 ):
+    session = _apply_provider_cost(session, prov)
     model_display = session.model or "unknown"
     if title:
         header_label.text = f"{title} ({model_display})"
@@ -200,6 +214,81 @@ def _render_turns(session, turns_container, turns_label, expanded_turns, limit_s
     with turns_container:
         for turn in display:
             _render_turn_row(turn, expanded_turns)
+
+
+class _PricedTurn(Turn):
+    """Turn whose cost properties aggregate per-message provider costs."""
+
+    @property
+    def cost_by_type(self) -> dict[str, float]:
+        totals = {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_create": 0.0}
+        for msg in self.messages:
+            for key in totals:
+                totals[key] += getattr(msg, "cost_by_type", {}).get(key, 0.0)
+        return totals
+
+    @property
+    def estimated_cost(self) -> float:
+        return sum(self.cost_by_type.values())
+
+
+class _PricedSession(Session):
+    """Session whose cost properties aggregate provider-priced turns."""
+
+    @property
+    def cost_by_type(self) -> dict[str, float]:
+        totals = {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_create": 0.0}
+        for turn in self.turns:
+            for key in totals:
+                totals[key] += turn.cost_by_type[key]
+        return totals
+
+    @property
+    def estimated_cost(self) -> float:
+        return sum(self.cost_by_type.values())
+
+
+def _apply_provider_cost(session: Session, prov) -> Session:
+    """Reprice a session with the provider's pricing table.
+
+    The built-in Session/Turn cost properties assume the Claude pricing
+    table (and are read-only); providers with their own models (codex,
+    opencode) need per-message repricing. Messages whose model has no
+    known pricing contribute $0.
+    """
+    if prov is None:
+        return session
+    priced = False
+    for turn in session.turns:
+        for msg in turn.messages:
+            if not msg.model or not msg.usage:
+                continue
+            pricing = prov.get_pricing(msg.model)
+            if pricing is None:
+                continue
+            u = msg.usage
+            msg.cost_by_type = {  # type: ignore[attr-defined]
+                "input": u.get("input_tokens", 0) * pricing.input / 1_000_000,
+                "output": u.get("output_tokens", 0) * pricing.output / 1_000_000,
+                "cache_read": u.get(
+                    "cache_read_input_tokens", 0,
+                ) * pricing.cache_read / 1_000_000,
+                "cache_create": u.get(
+                    "cache_creation_input_tokens", 0,
+                ) * pricing.cache_write / 1_000_000,
+            }
+            priced = True
+    if not priced:
+        return session
+    turns = [
+        _PricedTurn(number=t.number, messages=t.messages) for t in session.turns
+    ]
+    return _PricedSession(
+        session_id=session.session_id,
+        model=session.model,
+        turns=turns,
+        metadata=session.metadata,
+    )
 
 
 def _format_cost(cost: float) -> str:

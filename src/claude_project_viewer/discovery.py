@@ -12,11 +12,13 @@ ACTIVE_THRESHOLD_SECONDS = 900
 PROVIDER_RESUME_COMMANDS = {
     "claude": "claude --resume {session_id}",
     "codex": "codex --resume {session_id}",
+    "opencode": "opencode -s {session_id}",
 }
 
 PROVIDER_COLORS = {
     "claude": "deep-orange",
     "codex": "teal",
+    "opencode": "indigo",
 }
 
 
@@ -198,7 +200,9 @@ def discover_active_sessions(
             if (time.time() - session.mtime) < threshold:
                 provider = get_provider(session.provider)
                 if provider:
-                    exchanges = provider.extract_tail_exchanges(session.path)
+                    exchanges = provider.extract_tail_exchanges(
+                        session.path, session_id=session.session_id,
+                    )
                 else:
                     exchanges = _extract_tail_exchanges(session.path)
                 active.append(ActiveSessionInfo(
