@@ -22,6 +22,8 @@ from claude_project_viewer.providers import get_all_providers
 
 
 def create_projects_page():
+    from claude_project_viewer.app import get_ui_state  # lazy: app imports this module
+
     state = {"projects": [], "last_mtimes": {}}
 
     with ui.column().classes("w-full max-w-6xl mx-auto p-6 gap-4"):
@@ -41,28 +43,32 @@ def create_projects_page():
         history_container = ui.row().classes("w-full")
 
         with ui.row().classes("w-full gap-2 items-end"):
+            ui_state = get_ui_state()
             filter_input = ui.input(
                 label="Filter projects",
                 placeholder="Type to filter...",
+                value=ui_state["filter"],
             ).classes("flex-grow")
             provider_options = {"all": "All"}
             for prov in get_all_providers():
                 provider_options[prov.slug] = prov.name
             provider_select = ui.select(
                 options=provider_options,
-                value="all",
+                value=_valid_provider(ui_state["provider"], provider_options),
                 label="Provider",
             ).classes("w-32")
 
         state["provider_select"] = provider_select
 
-        def _on_filter_change():
+        def _save_and_refilter():
+            ui_state["filter"] = filter_input.value or ""
+            ui_state["provider"] = provider_select.value or "all"
             _apply_filter(
                 state["projects"], container, filter_input, provider_select,
             )
 
-        filter_input.on("update:model-value", _on_filter_change)
-        provider_select.on("update:model-value", _on_filter_change)
+        filter_input.on("update:model-value", _save_and_refilter)
+        provider_select.on("update:model-value", _save_and_refilter)
 
         with ui.row().classes("w-full gap-2"):
             stats_label = ui.label("").classes("text-xs text-grey-6")
@@ -146,6 +152,11 @@ async def _load_projects(state, container, filter_input, provider_select):
             state["last_mtimes"][str(session.path)] = session.mtime
 
     _apply_filter(projects, container, filter_input, provider_select)
+
+
+def _valid_provider(value: str, options: dict) -> str:
+    """Return the saved provider if it is still a known option, else 'all'."""
+    return value if value in options else "all"
 
 
 def _apply_filter(projects, container, filter_input, provider_select=None):

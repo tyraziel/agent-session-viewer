@@ -8,16 +8,18 @@ from claude_project_viewer.formatting import (
     format_size,
     get_activity_indicator,
 )
+from claude_project_viewer.pages.breadcrumbs import render_breadcrumbs
 
 
 def create_session_list_page(project_name: str, provider: str = "claude"):
     state = {"sessions": []}
 
     with ui.column().classes("w-full max-w-6xl mx-auto p-6 gap-4"):
+        render_breadcrumbs([
+            ("Projects", "/"),
+            (project_name, None),
+        ])
         with ui.row().classes("items-center gap-2 w-full"):
-            ui.button(icon="arrow_back", on_click=lambda: ui.navigate.to("/")).props(
-                "dense flat"
-            )
             ui.label(project_name).classes("text-2xl font-bold")
             ui.space()
             ui.button(

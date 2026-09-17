@@ -8,6 +8,7 @@ from claude_project_viewer.discovery import discover_all_projects
 from claude_project_viewer.providers import get_provider
 from claude_project_viewer.formatting import format_duration, format_duration_ago, get_activity_indicator
 from claude_project_viewer.parser import Message, Session, SubAgentInfo, Turn, parse_session
+from claude_project_viewer.pages.breadcrumbs import render_breadcrumbs
 
 
 def create_session_detail_page(
@@ -17,14 +18,12 @@ def create_session_detail_page(
     expanded_turns: set[int] = set()
 
     with ui.column().classes("w-full max-w-6xl mx-auto p-6 gap-4"):
-        with ui.row().classes("items-center gap-2 w-full"):
-            ui.button(
-                icon="arrow_back",
-                on_click=lambda: ui.navigate.to(
-                    f"/{provider}/project/{project_name}"
-                ),
-            ).props("dense flat")
-            header_label = ui.label("Loading...").classes("text-2xl font-bold")
+        _, crumb_current = render_breadcrumbs([
+            ("Projects", "/"),
+            (project_name, f"/{provider}/project/{project_name}"),
+            (session_id[:12], None),
+        ])
+        header_label = ui.label("Loading...").classes("text-2xl font-bold")
 
         meta_row = ui.row().classes("items-center gap-4")
         summary_container = ui.column().classes("w-full")
@@ -71,6 +70,9 @@ def create_session_detail_page(
         )
         state["session"] = session
         state["last_mtime"] = session_info.mtime
+
+        if crumb_current:
+            crumb_current.text = state["title"] or session_id[:12]
 
         _render_session(
             session, header_label, meta_row, summary_container,

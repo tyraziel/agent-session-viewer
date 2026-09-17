@@ -5,17 +5,17 @@ from pathlib import Path
 from nicegui import run, ui
 
 from claude_project_viewer.discovery import get_claude_base_dir
+from claude_project_viewer.pages.breadcrumbs import render_breadcrumbs
 
 
 def create_memory_page(project_name: str, provider: str = "claude"):
     with ui.column().classes("w-full max-w-6xl mx-auto p-6 gap-4"):
+        render_breadcrumbs([
+            ("Projects", "/"),
+            (project_name, f"/{provider}/project/{project_name}"),
+            ("Memory", None),
+        ])
         with ui.row().classes("items-center gap-2 w-full"):
-            ui.button(
-                icon="arrow_back",
-                on_click=lambda: ui.navigate.to(
-                    f"/{provider}/project/{project_name}"
-                ),
-            ).props("dense flat")
             ui.label("Memory").classes("text-2xl font-bold")
             ui.space()
             ui.label(project_name).classes("text-sm text-grey-6").style(

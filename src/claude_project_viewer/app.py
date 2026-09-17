@@ -11,9 +11,18 @@ from claude_project_viewer.pages.session_list import create_session_list_page
 
 _config: Config | None = None
 
+# Cross-page UI state (projects-page filters). In-memory; lost on restart.
+# See docs/filter_state_options.md for why a plain global and not
+# app.storage.client (the latter is scoped per page connection).
+_ui_state: dict = {"filter": "", "provider": "all"}
+
 
 def get_config() -> Config:
     return _config or Config()
+
+
+def get_ui_state() -> dict:
+    return _ui_state
 
 
 def _page_setup():
