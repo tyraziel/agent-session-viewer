@@ -137,6 +137,10 @@ def _get_turn_conversation(turn: Turn) -> list[tuple[str, str]]:
     return conversation
 
 
+def _is_reasoning_content(content: str) -> bool:
+    return content.startswith("[thinking] ")
+
+
 def _render_session(
     session: Session,
     header_label,
@@ -442,6 +446,22 @@ def _render_turn_row(turn: Turn, expanded_turns: set[int]):
                                     f'overflow-y: auto;">'
                                     f"{_escape_html(content)}</pre>"
                                 )
+                    elif _is_reasoning_content(content):
+                        with ui.row().classes("items-start gap-2"):
+                            ui.icon("psychology").classes("text-sm mt-1").style(
+                                "color: #d6bd72;"
+                            )
+                            with ui.element("div").classes("flex-grow").style(
+                                "background: rgba(214, 189, 114, 0.08); "
+                                "border-radius: 8px; padding: 8px 12px;"
+                            ):
+                                ui.html(
+                                    f'<pre style="white-space: pre-wrap; '
+                                    f"word-break: break-word; margin: 0; "
+                                    f'font-size: 0.8rem; max-height: 150px; '
+                                    f'overflow-y: auto; color: #d6bd72;">'
+                                    f"{_escape_html(content)}</pre>"
+                                )
                     else:
                         with ui.row().classes("items-start gap-2"):
                             ui.icon("smart_toy").classes("text-green text-sm mt-1")
@@ -555,7 +575,12 @@ def _render_message(msg: Message):
             ui.label(role_label).classes("text-xs font-bold")
 
             if msg.content:
-                _render_text_block(msg.content)
+                if msg.role == "assistant" and _is_reasoning_content(msg.content):
+                    _render_text_block(
+                        msg.content, inline_style="color: #d6bd72;",
+                    )
+                else:
+                    _render_text_block(msg.content)
 
             for tc in msg.tool_calls:
                 if tc.tool_name == "Agent":
@@ -674,6 +699,14 @@ def _render_subagent_conversation(session):
                                 "text-primary text-xs mt-1"
                             )
                             _render_text_block(content)
+                    elif _is_reasoning_content(content):
+                        with ui.row().classes("items-start gap-1"):
+                            ui.icon("psychology").classes("text-xs mt-1").style(
+                                "color: #d6bd72;"
+                            )
+                            _render_text_block(
+                                content, inline_style="color: #d6bd72;",
+                            )
                     else:
                         with ui.row().classes("items-start gap-1"):
                             ui.icon("smart_toy").classes(
@@ -700,12 +733,16 @@ def _render_agent_tool_call(tc):
             _render_text_block(prompt)
 
 
-def _render_text_block(text: str, color: str = "text-grey-6"):
+def _render_text_block(
+    text: str,
+    color: str = "text-grey-6",
+    inline_style: str = "",
+):
     escaped = _escape_html(text)
     ui.html(
         f'<pre style="white-space: pre-wrap; word-break: break-word; '
         f"margin: 2px 0; font-size: 0.75rem; max-height: 300px; "
-        f'overflow-y: auto;">{escaped}</pre>'
+        f'overflow-y: auto; {inline_style}">{escaped}</pre>'
     ).classes(color)
 
 
