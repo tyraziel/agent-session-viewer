@@ -129,7 +129,9 @@ class PricingTests(unittest.TestCase):
                 "\n".join(json.dumps(entry) for entry in entries),
                 encoding="utf-8",
             )
-            session = CodexProvider().parse_session(session_path)
+            session = CodexProvider(
+                include_default_memory=False,
+            ).parse_session(session_path)
 
         assistant = next(
             message
@@ -143,7 +145,9 @@ class PricingTests(unittest.TestCase):
         self.assertEqual(assistant.usage["output_tokens"], 80)
         self.assertEqual(assistant.usage["reasoning_tokens"], 20)
         self.assertAlmostEqual(
-            _apply_provider_cost(session, CodexProvider()).estimated_cost,
+            _apply_provider_cost(
+                session, CodexProvider(include_default_memory=False),
+            ).estimated_cost,
             0.000132,
         )
 

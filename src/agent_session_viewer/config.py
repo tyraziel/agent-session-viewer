@@ -13,9 +13,13 @@ DEFAULT_CONFIG_PATH = Path.home() / ".config" / "agent-session-viewer" / "config
 
 @dataclass
 class ProviderConfig:
+    """Per-provider paths and toggles; Codex also supports memory databases."""
+
     enabled: bool = True
     session_paths: list[Path] = field(default_factory=list)
     include_default: bool = True
+    memory_paths: list[Path] = field(default_factory=list)
+    include_default_memory: bool = True
 
 
 @dataclass
@@ -44,6 +48,13 @@ def load_config(config_path: Path | None = None) -> Config:
                             for p in pconf.get("session_paths", [])
                         ],
                         include_default=pconf.get("include_default", True),
+                        memory_paths=[
+                            Path(p).expanduser()
+                            for p in pconf.get("memory_paths", [])
+                        ],
+                        include_default_memory=pconf.get(
+                            "include_default_memory", True,
+                        ),
                     )
             else:
                 if "session_paths" in raw:

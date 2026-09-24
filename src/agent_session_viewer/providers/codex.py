@@ -2,6 +2,7 @@
 
 import json
 import re
+import sqlite3
 from dataclasses import field
 from pathlib import Path
 from typing import Any
@@ -167,6 +168,14 @@ def _load_session_index() -> dict[str, str]:
 
 
 class CodexProvider(ProviderBase):
+    def __init__(
+        self,
+        memory_paths: list[Path] | None = None,
+        include_default_memory: bool = True,
+    ):
+        self.memory_paths = list(memory_paths or [])
+        self.include_default_memory = include_default_memory
+
     @property
     def slug(self) -> str:
         return "codex"
@@ -177,6 +186,9 @@ class CodexProvider(ProviderBase):
 
     def default_paths(self) -> list[Path]:
         return [Path.home() / ".codex" / "sessions"]
+
+    def default_memory_paths(self) -> list[Path]:
+        return [Path.home() / ".codex"]
 
     def discover_projects(self, paths: list[Path]) -> list[ProjectInfo]:
         projects_by_cwd: dict[str, ProjectInfo] = {}
@@ -225,7 +237,15 @@ class CodexProvider(ProviderBase):
         return projects
 
     def parse_session(self, path: Path, session_id: str | None = None) -> Session:
-        return _parse_codex_session(path)
+        session = _parse_codex_session(path)
+        lookup_id = session_id or session.session_id or path.stem
+        memory_paths = list(self.memory_paths)
+        if self.include_default_memory:
+            memory_paths.extend(self.default_memory_paths())
+        session.metadata.update(
+            _load_codex_session_memory(lookup_id, memory_paths),
+        )
+        return session
 
     def extract_tail_exchanges(
         self, path: Path, max_exchanges: int = 3, session_id: str | None = None,
@@ -323,6 +343,26 @@ def _extract_text(content: list[dict]) -> str:
     return ""
 
 
+def _extract_codex_reasoning_summary(summary: Any) -> str:
+    """Extract readable summary text from Codex reasoning items."""
+    if isinstance(summary, str):
+        return summary.strip()
+    if not isinstance(summary, list):
+        return ""
+
+    parts = []
+    for item in summary:
+        if isinstance(item, str):
+            text = item
+        elif isinstance(item, dict) and item.get("type") == "summary_text":
+            text = item.get("text", "")
+        else:
+            continue
+        if isinstance(text, str) and text.strip():
+            parts.append(text.strip())
+    return "\n".join(parts)
+
+
 def _parse_codex_session(path: Path) -> Session:
     """Parse a Codex rollout JSONL into the shared Session model."""
     session = Session(session_id=path.stem)
@@ -417,6 +457,91 @@ def _safe_int(value: Any) -> int:
         return 0
 
 
+def _load_codex_session_memory(
+    session_id: str,
+    paths: list[Path],
+) -> dict[str, str]:
+    """Load the newest matching Codex memory record from configured databases."""
+    if not session_id:
+        return {}
+
+    records: list[tuple[float, str, str]] = []
+    for database in _codex_memory_databases(paths):
+        connection = None
+        try:
+            connection = sqlite3.connect(
+                f"{database.resolve().as_uri()}?mode=ro",
+                uri=True,
+                timeout=2,
+            )
+            columns = {
+                row[1]
+                for row in connection.execute(
+                    "pragma table_info(stage1_outputs)"
+                )
+            }
+            if not {"thread_id", "raw_memory", "rollout_summary"}.issubset(columns):
+                continue
+            generated_at = "generated_at" if "generated_at" in columns else "NULL"
+            query = (
+                "select raw_memory, rollout_summary, " + generated_at
+                + " from stage1_outputs where thread_id = ?"
+            )
+            for raw_memory, rollout_summary, timestamp in connection.execute(
+                query, (session_id,),
+            ):
+                memory = raw_memory.strip() if isinstance(raw_memory, str) else ""
+                summary = (
+                    rollout_summary.strip()
+                    if isinstance(rollout_summary, str)
+                    else ""
+                )
+                if summary or memory:
+                    try:
+                        sort_key = float(timestamp or 0)
+                    except (TypeError, ValueError):
+                        sort_key = 0.0
+                    records.append((sort_key, summary, memory))
+        except sqlite3.Error:
+            continue
+        finally:
+            if connection is not None:
+                connection.close()
+
+    if not records:
+        return {}
+
+    _, summary, memory = max(records, key=lambda row: row[0])
+    result = {}
+    if summary:
+        result["session_summary"] = summary
+    if memory:
+        result["session_memory"] = memory
+    return result
+
+
+def _codex_memory_databases(paths: list[Path]) -> list[Path]:
+    """Expand database paths, directories, and filename globs without duplicates."""
+    databases: list[Path] = []
+    seen: set[Path] = set()
+    for path in paths:
+        if path.is_dir():
+            candidates = sorted(path.glob("memories_*.sqlite"))
+        elif any(char in path.name for char in "*?["):
+            candidates = sorted(path.parent.glob(path.name))
+        elif path.is_file():
+            candidates = [path]
+        else:
+            candidates = []
+
+        for candidate in candidates:
+            resolved = candidate.resolve()
+            if resolved not in seen and candidate.is_file():
+                seen.add(resolved)
+                databases.append(candidate)
+    return databases
+
+
 def _parse_codex_response_item(payload: dict, raw: dict) -> Message | None:
     ptype = payload.get("type", "")
     role = payload.get("role", "")
@@ -436,7 +561,7 @@ def _parse_codex_response_item(payload: dict, raw: dict) -> Message | None:
         return None
 
     if ptype == "reasoning":
-        summary = payload.get("summary", "")
+        summary = _extract_codex_reasoning_summary(payload.get("summary", ""))
         if summary:
             return Message(role="assistant", content=f"[thinking] {summary}", raw=raw)
         return None

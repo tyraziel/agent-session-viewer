@@ -43,7 +43,13 @@ def main():
     config = load_config(config_path)
 
     register_provider(ClaudeProvider())
-    register_provider(CodexProvider())
+    codex_config = config.providers.get("codex")
+    register_provider(CodexProvider(
+        memory_paths=codex_config.memory_paths if codex_config else None,
+        include_default_memory=(
+            codex_config.include_default_memory if codex_config else True
+        ),
+    ))
     register_provider(OpencodeProvider())
 
     create_app(config=config)

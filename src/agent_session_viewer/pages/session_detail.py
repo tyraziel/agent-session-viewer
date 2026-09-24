@@ -201,6 +201,7 @@ def _render_session(
     summary_container.clear()
     with summary_container:
         _render_token_summary(session)
+        _render_session_summary(session)
 
     _render_turns(session, turns_container, turns_label, expanded_turns, limit_select)
 
@@ -308,6 +309,28 @@ def _format_cost(cost: float) -> str:
     return f"${cost:.2f}"
 
 
+def _render_session_summary(session: Session):
+    summary = session.metadata.get("session_summary", "")
+    memory = session.metadata.get("session_memory", "")
+    summary = summary.strip() if isinstance(summary, str) else ""
+    memory = memory.strip() if isinstance(memory, str) else ""
+    content = summary or memory
+    if not content:
+        return
+
+    title = "Session Summary" if summary else "Session Memory"
+    with ui.card().classes("w-full").style(
+        "background: #1a1a2e; border: 1px solid #2a2a4a;"
+    ):
+        ui.label(title).classes("text-sm font-bold")
+        _render_text_block(content)
+        if summary and memory and memory != summary:
+            with ui.expansion("Memory details").classes("w-full mt-1").props(
+                "dense header-class=text-grey-6"
+            ):
+                _render_text_block(memory)
+
+
 def _cost_label(cost: float):
     """Render a cost value in matrix green."""
     ui.label(_format_cost(cost)).classes("text-xs").style(
@@ -340,8 +363,11 @@ def _render_token_summary(session: Session):
                     f"~{_format_cost(total_cost)}", color="green",
                 ).classes("text-xs").tooltip(
                     "Estimated from published list prices. "
-                    "Actual costs may differ due to negotiated rates, "
-                    "billing tier, or pricing changes."
+                    "Context tier is inferred from input and cache token "
+                    "counts in the session log and may differ from the "
+                    "provider's context accounting. Actual costs may also "
+                    "differ due to negotiated rates, billing tier, or "
+                    "pricing changes."
                 )
 
         with ui.grid(columns=12 if reasoning > 0 else 9).classes("gap-1"):
