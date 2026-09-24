@@ -2,12 +2,12 @@
 
 from nicegui import app, ui
 
-from claude_project_viewer.config import Config
-from claude_project_viewer.pages.history import create_history_page
-from claude_project_viewer.pages.memory import create_memory_page
-from claude_project_viewer.pages.projects import create_projects_page
-from claude_project_viewer.pages.session_detail import create_session_detail_page
-from claude_project_viewer.pages.session_list import create_session_list_page
+from agent_session_viewer.config import Config
+from agent_session_viewer.pages.history import create_history_page
+from agent_session_viewer.pages.memory import create_memory_page
+from agent_session_viewer.pages.projects import create_projects_page
+from agent_session_viewer.pages.session_detail import create_session_detail_page
+from agent_session_viewer.pages.session_list import create_session_list_page
 
 _config: Config | None = None
 

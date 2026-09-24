@@ -4,7 +4,7 @@ import time
 
 from nicegui import run, ui
 
-from claude_project_viewer.discovery import (
+from agent_session_viewer.discovery import (
     PROVIDER_COLORS,
     ActiveSessionInfo,
     ProjectInfo,
@@ -13,16 +13,16 @@ from claude_project_viewer.discovery import (
     discover_all_projects,
     discover_history,
 )
-from claude_project_viewer.formatting import (
+from agent_session_viewer.formatting import (
     format_duration_ago,
     format_size,
     get_activity_indicator,
 )
-from claude_project_viewer.providers import get_all_providers
+from agent_session_viewer.providers import get_all_providers
 
 
 def create_projects_page():
-    from claude_project_viewer.app import get_ui_state  # lazy: app imports this module
+    from agent_session_viewer.app import get_ui_state  # lazy: app imports this module
 
     state = {"projects": [], "last_mtimes": {}}
 

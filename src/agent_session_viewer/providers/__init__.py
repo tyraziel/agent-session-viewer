@@ -3,9 +3,9 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from claude_project_viewer.discovery import ProjectInfo, SessionInfo
-from claude_project_viewer.parser import Session
-from claude_project_viewer.pricing import ModelPricing
+from agent_session_viewer.discovery import ProjectInfo, SessionInfo
+from agent_session_viewer.parser import Session
+from agent_session_viewer.pricing import ModelPricing
 
 
 class ProviderBase(ABC):

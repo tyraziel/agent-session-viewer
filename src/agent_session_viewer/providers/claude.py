@@ -2,16 +2,16 @@
 
 from pathlib import Path
 
-from claude_project_viewer.discovery import (
+from agent_session_viewer.discovery import (
     ProjectInfo,
     SessionInfo,
     _count_turns_and_api_calls,
     _extract_session_meta,
     _extract_tail_exchanges,
 )
-from claude_project_viewer.parser import Session, parse_session
-from claude_project_viewer.pricing import ModelPricing, get_pricing
-from claude_project_viewer.providers import ProviderBase
+from agent_session_viewer.parser import Session, parse_session
+from agent_session_viewer.pricing import ModelPricing, get_pricing
+from agent_session_viewer.providers import ProviderBase
 
 
 class ClaudeProvider(ProviderBase):

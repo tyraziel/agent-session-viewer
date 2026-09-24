@@ -100,9 +100,9 @@ def discover_history(base_dir: Path | None = None) -> HistoryFile | None:
 
 def discover_all_projects() -> list[ProjectInfo]:
     """Discover projects from all registered providers."""
-    from claude_project_viewer.app import get_config
-    from claude_project_viewer.config import resolve_provider_paths
-    from claude_project_viewer.providers import get_all_providers
+    from agent_session_viewer.app import get_config
+    from agent_session_viewer.config import resolve_provider_paths
+    from agent_session_viewer.providers import get_all_providers
 
     config = get_config()
     all_projects: list[ProjectInfo] = []
@@ -190,7 +190,7 @@ def discover_active_sessions(
     projects: list[ProjectInfo] | None = None,
     threshold: float = ACTIVE_THRESHOLD_SECONDS,
 ) -> list["ActiveSessionInfo"]:
-    from claude_project_viewer.providers import get_provider
+    from agent_session_viewer.providers import get_provider
 
     if projects is None:
         projects = discover_all_projects()

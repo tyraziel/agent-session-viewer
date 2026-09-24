@@ -6,16 +6,16 @@ from dataclasses import field
 from pathlib import Path
 from typing import Any
 
-from claude_project_viewer.discovery import ProjectInfo, SessionInfo
-from claude_project_viewer.parser import (
+from agent_session_viewer.discovery import ProjectInfo, SessionInfo
+from agent_session_viewer.parser import (
     Message,
     Session,
     ToolCall,
     ToolResult,
     Turn,
 )
-from claude_project_viewer.pricing import ModelPricing
-from claude_project_viewer.providers import ProviderBase
+from agent_session_viewer.pricing import ModelPricing
+from agent_session_viewer.providers import ProviderBase
 
 _CODEX_PRICING: dict[str, ModelPricing] = {
     "o3": ModelPricing(2.00, 8.00, 0.50, 2.50),

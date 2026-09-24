@@ -38,7 +38,7 @@ cd agent-session-viewer
 uv sync
 
 # Run
-uv run claude-project-viewer
+uv run agent-session-viewer
 ```
 
 Open http://127.0.0.1:8090 in your browser.
@@ -46,20 +46,20 @@ Open http://127.0.0.1:8090 in your browser.
 ## CLI Options
 
 ```
-uv run claude-project-viewer [OPTIONS]
+uv run agent-session-viewer [OPTIONS]
 
 Options:
   --port PORT        Port to serve on (default: 8090)
   --host HOST        Host to bind to (default: 127.0.0.1)
   --claude-dir DIR   Path to Claude config directory (default: ~/.claude or CLAUDE_CONFIG_DIR)
-  --config CONFIG    Path to config file (default: ~/.config/claude-project-viewer/config.json)
+  --config CONFIG    Path to config file (default: ~/.config/agent-session-viewer/config.json)
 ```
 
 ## Configuration
 
 No config file is required — every provider uses its default location. To
 enable/disable a provider or add extra session locations, create
-`~/.config/claude-project-viewer/config.json`:
+`~/.config/agent-session-viewer/config.json`:
 
 ```json
 {
@@ -112,7 +112,7 @@ from any provider renders identically.
 ## Project Structure
 
 ```
-src/claude_project_viewer/
+src/agent_session_viewer/
 ├── __main__.py          # CLI entry point, provider registration
 ├── app.py               # NiceGUI routes, shared in-memory UI state
 ├── config.py            # Config file loading, per-provider path resolution
@@ -128,7 +128,7 @@ src/claude_project_viewer/
     ├── session_detail.py # Turn-by-turn session viewer
     └── session_list.py  # Session listing for a project
 
-src/claude_project_viewer/providers/
+src/agent_session_viewer/providers/
 ├── __init__.py      # ProviderBase interface + registry
 ├── claude.py        # Claude Code provider
 ├── codex.py         # Codex CLI provider
@@ -147,9 +147,9 @@ known pricing (e.g. local or custom models) show no cost estimate.
 
 ## AI Attribution
 
-[AIA PAI SeCeNc Hin R Claude Code [Opus 4.6 1m], opencode [Qwen3-8-27B] v1.0](https://aiattribution.github.io/statements/AIA-PAI-SeCeNc-Hin-R-?model=Claude%20Code%20%5BOpus%204.6%201m%5D%2C%20opencode%20%5BQwen3-8-27B%5D-v1.0)
+[AIA PAI SeCeNc Hin R Claude Code [Opus 4.6 1m], opencode [Qwen3-8-27B], opencode [gpt-6-luna high] v1.0](https://aiattribution.github.io/statements/AIA-PAI-SeCeNc-Hin-R-?model=Claude%20Code%20%5BOpus%204.6%201m%5D%2C%20opencode%20%5BQwen3-8-27B%5D%2C%20opencode%20%5Bgpt-6-luna%20high%5D-v1.0)
 
-This work was primarily AI-generated. AI was used to make stylistic edits, such as changes to structure, wording, and clarity. AI was used to make content edits, such as changes to scope, information, and ideas. AI was used to make new content, such as text, images, analysis, and ideas. AI was prompted for its contributions, or AI assistance was enabled. AI-generated content was reviewed and approved. The following model(s) or application(s) were used: Claude Code [Opus 4.6 1m], opencode [Qwen3-8-27B].
+This work was primarily AI-generated. AI was used to make stylistic edits, such as changes to structure, wording, and clarity. AI was used to make content edits, such as changes to scope, information, and ideas. AI was used to make new content, such as text, images, analysis, and ideas. AI was prompted for its contributions, or AI assistance was enabled. AI-generated content was reviewed and approved. The following model(s) or application(s) were used: Claude Code [Opus 4.6 1m], opencode [Qwen3-8-27B], opencode [gpt-6-luna high].
 
 ## License
 

@@ -1,4 +1,4 @@
-"""Entry point for claude-project-viewer."""
+"""Entry point for agent-session-viewer."""
 
 import argparse
 import logging
@@ -7,16 +7,16 @@ from pathlib import Path
 
 from nicegui import ui
 
-from claude_project_viewer.app import create_app
-from claude_project_viewer.config import load_config
-from claude_project_viewer.providers import register_provider
-from claude_project_viewer.providers.claude import ClaudeProvider
-from claude_project_viewer.providers.codex import CodexProvider
-from claude_project_viewer.providers.opencode import OpencodeProvider
+from agent_session_viewer.app import create_app
+from agent_session_viewer.config import load_config
+from agent_session_viewer.providers import register_provider
+from agent_session_viewer.providers.claude import ClaudeProvider
+from agent_session_viewer.providers.codex import CodexProvider
+from agent_session_viewer.providers.opencode import OpencodeProvider
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Session Viewer")
+    parser = argparse.ArgumentParser(description="Agent Session Viewer")
     parser.add_argument("--port", type=int, default=8090)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument(
@@ -27,7 +27,7 @@ def main():
     parser.add_argument(
         "--config",
         default=None,
-        help="Path to config file (default: ~/.config/claude-project-viewer/config.json)",
+        help="Path to config file (default: ~/.config/agent-session-viewer/config.json)",
     )
     args = parser.parse_args()
 
@@ -48,7 +48,7 @@ def main():
 
     create_app(config=config)
     ui.run(
-        title="Session Viewer",
+        title="Agent Session Viewer",
         port=args.port,
         host=args.host,
         reload=False,

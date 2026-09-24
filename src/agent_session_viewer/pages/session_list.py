@@ -2,13 +2,13 @@
 
 from nicegui import run, ui
 
-from claude_project_viewer.discovery import discover_all_projects
-from claude_project_viewer.formatting import (
+from agent_session_viewer.discovery import discover_all_projects
+from agent_session_viewer.formatting import (
     format_duration_ago,
     format_size,
     get_activity_indicator,
 )
-from claude_project_viewer.pages.breadcrumbs import render_breadcrumbs
+from agent_session_viewer.pages.breadcrumbs import render_breadcrumbs
 
 
 def create_session_list_page(project_name: str, provider: str = "claude"):

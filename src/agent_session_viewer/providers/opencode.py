@@ -17,18 +17,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from claude_project_viewer.discovery import ProjectInfo, SessionInfo
-from claude_project_viewer.parser import (
+from agent_session_viewer.discovery import ProjectInfo, SessionInfo
+from agent_session_viewer.parser import (
     Message,
     Session,
     ToolCall,
     ToolResult,
     Turn,
 )
-from claude_project_viewer.pricing import ModelPricing, get_pricing
-from claude_project_viewer.providers import ProviderBase
+from agent_session_viewer.pricing import ModelPricing, get_pricing
+from agent_session_viewer.providers import ProviderBase
 
-from claude_project_viewer.providers.codex import get_codex_pricing
+from agent_session_viewer.providers.codex import get_codex_pricing
 
 DEFAULT_DB_PATH = Path.home() / ".local" / "share" / "opencode" / "opencode.db"
 

@@ -1,4 +1,4 @@
-"""Configuration for claude-project-viewer."""
+"""Configuration for agent-session-viewer."""
 
 import json
 import logging
@@ -6,9 +6,9 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-log = logging.getLogger("claude_project_viewer")
+log = logging.getLogger("agent_session_viewer")
 
-DEFAULT_CONFIG_PATH = Path.home() / ".config" / "claude-project-viewer" / "config.json"
+DEFAULT_CONFIG_PATH = Path.home() / ".config" / "agent-session-viewer" / "config.json"
 
 
 @dataclass

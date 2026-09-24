@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "claude-project-viewer"
+name = "agent-session-viewer"
 version = "0.1.0"
-description = "Web UI for browsing Claude Code conversation history"
+description = "Web UI for browsing AI coding agent sessions"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
@@ -25,11 +25,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/tyraziel/claude-code-project-viewer"
-Repository = "https://github.com/tyraziel/claude-code-project-viewer"
+Homepage = "https://github.com/tyraziel/agent-session-viewer"
+Repository = "https://github.com/tyraziel/agent-session-viewer"
 
 [project.scripts]
-claude-project-viewer = "claude_project_viewer.__main__:main"
+agent-session-viewer = "agent_session_viewer.__main__:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/claude_project_viewer"]
+packages = ["src/agent_session_viewer"]

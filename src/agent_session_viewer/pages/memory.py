@@ -4,8 +4,8 @@ from pathlib import Path
 
 from nicegui import run, ui
 
-from claude_project_viewer.discovery import get_claude_base_dir
-from claude_project_viewer.pages.breadcrumbs import render_breadcrumbs
+from agent_session_viewer.discovery import get_claude_base_dir
+from agent_session_viewer.pages.breadcrumbs import render_breadcrumbs
 
 
 def create_memory_page(project_name: str, provider: str = "claude"):

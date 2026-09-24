@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from claude_project_viewer.pricing import estimate_cost
+from agent_session_viewer.pricing import estimate_cost
 
 
 @dataclass

@@ -6,8 +6,8 @@ from pathlib import Path
 
 from nicegui import run, ui
 
-from claude_project_viewer.discovery import discover_history
-from claude_project_viewer.formatting import format_duration_ago, format_size
+from agent_session_viewer.discovery import discover_history
+from agent_session_viewer.formatting import format_duration_ago, format_size
 
 
 def create_history_page():

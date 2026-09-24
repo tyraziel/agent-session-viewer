@@ -4,11 +4,11 @@ from pathlib import Path
 
 from nicegui import run, ui
 
-from claude_project_viewer.discovery import discover_all_projects
-from claude_project_viewer.providers import get_provider
-from claude_project_viewer.formatting import format_duration, format_duration_ago, get_activity_indicator
-from claude_project_viewer.parser import Message, Session, SubAgentInfo, Turn, parse_session
-from claude_project_viewer.pages.breadcrumbs import render_breadcrumbs
+from agent_session_viewer.discovery import discover_all_projects
+from agent_session_viewer.providers import get_provider
+from agent_session_viewer.formatting import format_duration, format_duration_ago, get_activity_indicator
+from agent_session_viewer.parser import Message, Session, SubAgentInfo, Turn, parse_session
+from agent_session_viewer.pages.breadcrumbs import render_breadcrumbs
 
 
 def create_session_detail_page(
