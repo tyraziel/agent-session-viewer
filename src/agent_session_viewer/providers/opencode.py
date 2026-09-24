@@ -465,6 +465,7 @@ def _usage_from(m_data: dict) -> dict[str, int]:
     return {
         "input_tokens": int(tokens.get("input", 0) or 0),
         "output_tokens": int(tokens.get("output", 0) or 0),
+        "reasoning_tokens": int(tokens.get("reasoning", 0) or 0),
         "cache_read_input_tokens": int(cache.get("read", 0) or 0),
         "cache_creation_input_tokens": int(cache.get("write", 0) or 0),
     }

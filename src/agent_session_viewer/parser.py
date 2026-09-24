@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from agent_session_viewer.pricing import estimate_cost
+from agent_session_viewer.pricing import estimate_usage_cost
 
 
 @dataclass
@@ -50,7 +50,7 @@ class Message:
     tool_calls: list[ToolCall] = field(default_factory=list)
     tool_results: list[ToolResult] = field(default_factory=list)
     timestamp: str = ""
-    usage: dict[str, int] = field(default_factory=dict)
+    usage: dict[str, Any] = field(default_factory=dict)
     subagent: SubAgentInfo | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
@@ -136,6 +136,7 @@ class Turn:
         for m in self.messages:
             total += m.usage.get("input_tokens", 0)
             total += m.usage.get("output_tokens", 0)
+            total += m.usage.get("reasoning_tokens", 0)
         return total
 
     @property
@@ -143,6 +144,7 @@ class Turn:
         totals: dict[str, int] = {
             "input_tokens": 0,
             "output_tokens": 0,
+            "reasoning_tokens": 0,
             "cache_read_input_tokens": 0,
             "cache_creation_input_tokens": 0,
         }
@@ -168,22 +170,19 @@ class Turn:
 
     @property
     def cost_by_type(self) -> dict[str, float]:
-        totals = {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_create": 0.0}
+        totals = {
+            "input": 0.0,
+            "output": 0.0,
+            "reasoning": 0.0,
+            "cache_read": 0.0,
+            "cache_create": 0.0,
+        }
         for m in self.messages:
             if not m.model or not m.usage:
                 continue
-            totals["input"] += estimate_cost(
-                m.model, input_tokens=m.usage.get("input_tokens", 0),
-            )
-            totals["output"] += estimate_cost(
-                m.model, output_tokens=m.usage.get("output_tokens", 0),
-            )
-            totals["cache_read"] += estimate_cost(
-                m.model, cache_read_tokens=m.usage.get("cache_read_input_tokens", 0),
-            )
-            totals["cache_create"] += estimate_cost(
-                m.model, cache_create_tokens=m.usage.get("cache_creation_input_tokens", 0),
-            )
+            message_cost = estimate_usage_cost(m.model, m.usage)
+            for key in totals:
+                totals[key] += message_cost[key]
         return totals
 
     @property
@@ -203,6 +202,7 @@ class Session:
         totals: dict[str, int] = {
             "input_tokens": 0,
             "output_tokens": 0,
+            "reasoning_tokens": 0,
             "cache_read_input_tokens": 0,
             "cache_creation_input_tokens": 0,
         }
@@ -231,7 +231,13 @@ class Session:
 
     @property
     def cost_by_type(self) -> dict[str, float]:
-        totals = {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_create": 0.0}
+        totals = {
+            "input": 0.0,
+            "output": 0.0,
+            "reasoning": 0.0,
+            "cache_read": 0.0,
+            "cache_create": 0.0,
+        }
         for turn in self.turns:
             turn_cbt = turn.cost_by_type
             for key in totals:

@@ -137,13 +137,17 @@ src/agent_session_viewer/providers/
 
 ## Cost Estimation Disclaimer
 
-Token cost estimates displayed in the session viewer are based on published
-list prices as of August 20th, 2026 — [Anthropic](https://www.anthropic.com/pricing)
-for Claude models and [OpenAI](https://openai.com/api/pricing/) for GPT
-models. Actual costs may differ due to negotiated rates, billing tier, proxy
-or gateway providers, or pricing changes. These figures are approximate and
-should not be used for accounting purposes. Sessions using models without
-known pricing (e.g. local or custom models) show no cost estimate.
+Token cost estimates displayed in the session viewer use published standard
+API text-token list prices checked on September 24, 2026 —
+[Anthropic](https://platform.claude.com/docs/en/about-claude/pricing) for Claude
+models and [OpenAI](https://developers.openai.com/api/docs/pricing) for OpenAI
+models. OpenAI long-context rates and Anthropic's cache-write TTL rates are
+applied when the session usage data provides the necessary detail.
+Actual costs may differ due to negotiated rates, billing tier, proxy or gateway
+providers, service tier, modality-specific charges, or pricing changes. These
+figures are approximate and should not be used for accounting purposes.
+Sessions using models without known pricing (e.g. local or custom models) show
+no cost estimate.
 
 ## AI Attribution
 

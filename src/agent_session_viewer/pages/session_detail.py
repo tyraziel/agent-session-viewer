@@ -9,6 +9,7 @@ from agent_session_viewer.providers import get_provider
 from agent_session_viewer.formatting import format_duration, format_duration_ago, get_activity_indicator
 from agent_session_viewer.parser import Message, Session, SubAgentInfo, Turn, parse_session
 from agent_session_viewer.pages.breadcrumbs import render_breadcrumbs
+from agent_session_viewer.pricing import cost_by_type
 
 
 def create_session_detail_page(
@@ -223,7 +224,13 @@ class _PricedTurn(Turn):
 
     @property
     def cost_by_type(self) -> dict[str, float]:
-        totals = {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_create": 0.0}
+        totals = {
+            "input": 0.0,
+            "output": 0.0,
+            "reasoning": 0.0,
+            "cache_read": 0.0,
+            "cache_create": 0.0,
+        }
         for msg in self.messages:
             for key in totals:
                 totals[key] += getattr(msg, "cost_by_type", {}).get(key, 0.0)
@@ -239,7 +246,13 @@ class _PricedSession(Session):
 
     @property
     def cost_by_type(self) -> dict[str, float]:
-        totals = {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_create": 0.0}
+        totals = {
+            "input": 0.0,
+            "output": 0.0,
+            "reasoning": 0.0,
+            "cache_read": 0.0,
+            "cache_create": 0.0,
+        }
         for turn in self.turns:
             for key in totals:
                 totals[key] += turn.cost_by_type[key]
@@ -268,17 +281,9 @@ def _apply_provider_cost(session: Session, prov) -> Session:
             pricing = prov.get_pricing(msg.model)
             if pricing is None:
                 continue
-            u = msg.usage
-            msg.cost_by_type = {  # type: ignore[attr-defined]
-                "input": u.get("input_tokens", 0) * pricing.input / 1_000_000,
-                "output": u.get("output_tokens", 0) * pricing.output / 1_000_000,
-                "cache_read": u.get(
-                    "cache_read_input_tokens", 0,
-                ) * pricing.cache_read / 1_000_000,
-                "cache_create": u.get(
-                    "cache_creation_input_tokens", 0,
-                ) * pricing.cache_write / 1_000_000,
-            }
+            msg.cost_by_type = cost_by_type(  # type: ignore[attr-defined]
+                pricing, msg.usage,
+            )
             priced = True
     if not priced:
         return session
@@ -308,7 +313,8 @@ def _cost_label(cost: float):
 
 def _render_token_summary(session: Session):
     tokens = session.total_tokens
-    total = tokens["input_tokens"] + tokens["output_tokens"]
+    reasoning = tokens["reasoning_tokens"]
+    total = tokens["input_tokens"] + tokens["output_tokens"] + reasoning
     cache_read = tokens["cache_read_input_tokens"]
     cache_create = tokens["cache_creation_input_tokens"]
     all_input = tokens["input_tokens"] + cache_read + cache_create
@@ -334,13 +340,17 @@ def _render_token_summary(session: Session):
                     "billing tier, or pricing changes."
                 )
 
-        with ui.grid(columns=9).classes("gap-1"):
+        with ui.grid(columns=12 if reasoning > 0 else 9).classes("gap-1"):
             ui.label("Input:").classes("text-xs text-grey-6")
             ui.label(f"{tokens['input_tokens']:,}").classes("text-xs")
             _cost_label(cost_by_type["input"])
             ui.label("Output:").classes("text-xs text-grey-6")
             ui.label(f"{tokens['output_tokens']:,}").classes("text-xs")
             _cost_label(cost_by_type["output"])
+            if reasoning > 0:
+                ui.label("Reasoning:").classes("text-xs text-grey-6")
+                ui.label(f"{reasoning:,}").classes("text-xs")
+                _cost_label(cost_by_type["reasoning"])
             ui.label("Total:").classes("text-xs text-grey-6")
             ui.label(f"{total:,}").classes("text-xs")
             _cost_label(total_cost)
@@ -476,7 +486,8 @@ def _render_turn_row(turn: Turn, expanded_turns: set[int]):
 
 def _render_turn_token_breakdown(turn: Turn):
     tb = turn.token_breakdown
-    total = tb["input_tokens"] + tb["output_tokens"]
+    reasoning = tb["reasoning_tokens"]
+    total = tb["input_tokens"] + tb["output_tokens"] + reasoning
     if total == 0:
         return
 
@@ -491,13 +502,17 @@ def _render_turn_token_breakdown(turn: Turn):
         "background: #0d0d1a; border: 1px solid #1a1a2a; "
         "border-radius: 4px; padding: 8px 12px;"
     ):
-        with ui.grid(columns=9).classes("gap-1"):
+        with ui.grid(columns=12 if reasoning > 0 else 9).classes("gap-1"):
             ui.label("Input:").classes("text-xs text-grey-7")
             ui.label(f"{tb['input_tokens']:,}").classes("text-xs text-grey-5")
             _cost_label(cbt["input"])
             ui.label("Output:").classes("text-xs text-grey-7")
             ui.label(f"{tb['output_tokens']:,}").classes("text-xs text-grey-5")
             _cost_label(cbt["output"])
+            if reasoning > 0:
+                ui.label("Reasoning:").classes("text-xs text-grey-7")
+                ui.label(f"{reasoning:,}").classes("text-xs text-grey-5")
+                _cost_label(cbt["reasoning"])
             ui.label("Total:").classes("text-xs text-grey-7")
             ui.label(f"{total:,}").classes("text-xs text-grey-5")
             _cost_label(turn_cost)
@@ -534,8 +549,9 @@ def _render_message(msg: Message):
             if msg.usage:
                 ti = msg.usage.get("input_tokens", 0)
                 to = msg.usage.get("output_tokens", 0)
-                if ti + to > 0:
-                    role_label += f" [{ti + to:,} tok]"
+                reasoning = msg.usage.get("reasoning_tokens", 0)
+                if ti + to + reasoning > 0:
+                    role_label += f" [{ti + to + reasoning:,} tok]"
             ui.label(role_label).classes("text-xs font-bold")
 
             if msg.content:
