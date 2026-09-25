@@ -24,6 +24,7 @@ from agent_session_viewer.providers import get_all_providers
 def create_projects_page():
     from agent_session_viewer.app import get_ui_state  # lazy: app imports this module
 
+    client = ui.context.client
     state = {"projects": [], "last_mtimes": {}}
 
     with ui.column().classes("w-full max-w-6xl mx-auto p-6 gap-4"):
@@ -32,7 +33,10 @@ def create_projects_page():
             ui.space()
 
             async def _refresh():
-                await _load_projects(state, container, filter_input, state.get("provider_select"))
+                await _load_projects(
+                    state, container, filter_input,
+                    state.get("provider_select"), client,
+                )
 
             ui.button("Refresh", icon="refresh", on_click=_refresh).props(
                 "dense outline"
@@ -61,6 +65,8 @@ def create_projects_page():
         state["provider_select"] = provider_select
 
         def _save_and_refilter():
+            if client.is_deleted:
+                return
             ui_state["filter"] = filter_input.value or ""
             ui_state["provider"] = provider_select.value or "all"
             _apply_filter(
@@ -75,25 +81,23 @@ def create_projects_page():
 
         container = ui.column().classes("w-full gap-2")
 
-    async def _load_active(projects):
-        active = await run.io_bound(discover_active_sessions, projects)
-        active_container.clear()
-        if active:
-            with active_container:
-                ui.label("Active Sessions").classes("text-lg font-bold")
-                with ui.row().classes("w-full gap-2 flex-wrap"):
-                    for a in active:
-                        _render_active_card(a)
-
     async def _initial_load():
-        await _load_projects(state, container, filter_input, provider_select)
+        loaded = await _load_projects(
+            state, container, filter_input, provider_select, client,
+        )
+        if not loaded:
+            return
         total_projects = len(state["projects"])
         total_sessions = sum(p.session_count for p in state["projects"])
         stats_label.text = f"{total_projects} projects, {total_sessions} sessions"
 
-        await _load_active(state["projects"])
+        await _load_active(state["projects"], active_container, client)
+        if client.is_deleted:
+            return
 
         history = await run.io_bound(discover_history)
+        if client.is_deleted:
+            return
         history_container.clear()
         if history:
             with history_container:
@@ -120,7 +124,7 @@ def create_projects_page():
                         ui.icon("chevron_right").classes("text-grey-6")
 
     async def _poll_changes():
-        if ui.context.client.is_deleted:
+        if client.is_deleted:
             return
         changed = False
         for project in state["projects"]:
@@ -134,17 +138,27 @@ def create_projects_page():
                     state["last_mtimes"][key] = current_mtime
                     changed = True
         if changed:
-            await _load_projects(state, container, filter_input, provider_select)
-            await _load_active(state["projects"])
+            loaded = await _load_projects(
+                state, container, filter_input, provider_select, client,
+            )
+            if not loaded:
+                return
+            await _load_active(state["projects"], active_container, client)
 
     ui.timer(0.1, _initial_load, once=True)
     ui.timer(5.0, _poll_changes)
 
 
-async def _load_projects(state, container, filter_input, provider_select):
+async def _load_projects(
+    state,
+    container,
+    filter_input,
+    provider_select,
+    client,
+) -> bool:
     projects = await run.io_bound(discover_all_projects)
-    if projects is None:
-        return
+    if projects is None or client.is_deleted:
+        return False
     state["projects"] = projects
 
     for project in projects:
@@ -152,6 +166,20 @@ async def _load_projects(state, container, filter_input, provider_select):
             state["last_mtimes"][str(session.path)] = session.mtime
 
     _apply_filter(projects, container, filter_input, provider_select)
+    return True
+
+
+async def _load_active(projects, active_container, client):
+    active = await run.io_bound(discover_active_sessions, projects)
+    if client.is_deleted:
+        return
+    active_container.clear()
+    if active:
+        with active_container:
+            ui.label("Active Sessions").classes("text-lg font-bold")
+            with ui.row().classes("w-full gap-2 flex-wrap"):
+                for active_session in active:
+                    _render_active_card(active_session)
 
 
 def _valid_provider(value: str, options: dict) -> str:
