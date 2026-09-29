@@ -142,6 +142,8 @@ def _dedup(paths: list[Path]) -> list[Path]:
     for p in deduped:
         if p.is_dir():
             log.info("Scanning session path: %s", p)
+        elif p.is_file():
+            log.info("Using session file: %s", p)
         else:
             log.warning("Session path does not exist: %s", p)
     return deduped

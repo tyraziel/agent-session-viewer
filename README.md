@@ -4,7 +4,7 @@ A pure Python web UI for browsing sessions, project memories, and prompt history
 
 Supports **Claude Code**, **Codex CLI**, and **OpenCode** out of the box, with a provider abstraction for adding more.
 
-Web UI patterns adopted from [ai-guardian](https://github.com/RedHatProductSecurity/ai-guardian)'s trace viewer.
+Web UI patterns adopted from [ai-guardian's](https://github.com/RedHatProductSecurity/ai-guardian) trace viewer.
 
 ## Features
 
@@ -24,8 +24,8 @@ Web UI patterns adopted from [ai-guardian](https://github.com/RedHatProductSecur
 | Provider | Sessions stored in | Notes |
 |----------|-------------------|-------|
 | Claude Code | `~/.claude/projects/<project-slug>/<session-id>.jsonl` | One JSONL file per session; also provides prompt history (`~/.claude/history.jsonl`) and project memories |
-| Codex CLI | `~/.codex/sessions/YYYY/MM/DD/rollout-<timestamp>-<uuid>.jsonl` | One JSONL file per session, grouped by date; projects inferred from the session's working directory |
-| OpenCode | `~/.local/share/opencode/opencode.db` | Single SQLite database holding all sessions (`session`/`message`/`part` tables); read in read-only mode so a running opencode is undisturbed. Multiple databases can be configured (see Configuration) |
+| Codex CLI | `~/.codex/sessions/YYYY/MM/DD/rollout-<timestamp>-<uuid>.jsonl` | One JSONL file per session, grouped by date; projects inferred from the session's working directory. Optional per-thread summaries and memory are read from `~/.codex/memories_*.sqlite` |
+| OpenCode | `~/.local/share/opencode/opencode.db`; exported `*ses_*.json` files | Reads the live SQLite database and exported JSON sessions through the same OpenCode provider; session paths can include multiple databases, export files, or directories containing them |
 
 ## Quick Start
 
@@ -33,7 +33,7 @@ Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 # Clone and install
-git clone git@github.com:tyraziel/agent-session-viewer.git
+git clone https://github.com/tyraziel/agent-session-viewer.git
 cd agent-session-viewer
 uv sync
 
@@ -41,7 +41,7 @@ uv sync
 uv run agent-session-viewer
 ```
 
-Open http://127.0.0.1:8090 in your browser.
+The agent-session-viewer will run on port 8090.
 
 ## CLI Options
 
@@ -71,11 +71,17 @@ enable/disable a provider or add extra session locations, create
     },
     "codex": {
       "enabled": true,
-      "include_default": true
+      "include_default": true,
+      "memory_paths": ["/backup/codex/memories.sqlite"],
+      "include_default_memory": true
     },
     "opencode": {
       "enabled": true,
-      "session_paths": ["/backups/opencode.db", "/synced-dbs/"],
+      "session_paths": [
+        "/backups/opencode.db",
+        "/synced-dbs/",
+        "/exports/opencode/"
+      ],
       "include_default": true
     }
   }
@@ -84,9 +90,17 @@ enable/disable a provider or add extra session locations, create
 
 - `enabled` — set `false` to hide a provider entirely.
 - `session_paths` — extra locations to scan. For OpenCode, entries may be a
-  `.db` file or a directory (any file in it that looks like an OpenCode
-  database is used; others are skipped).
+  `.db` file, an exported JSON session file, or a directory (SQLite databases
+  and `*ses_*.json` exports are discovered recursively).
 - `include_default` — also scan the provider's default location (default `true`).
+- `memory_paths` — Codex-only memory databases to check for a matching thread.
+  Entries may be database files, directories containing `memories_*.sqlite`,
+  or filename globs. Multiple locations can be configured.
+- `include_default_memory` — for Codex, also check
+  `~/.codex/memories_*.sqlite` (default `true`). Set it to `false` to use only
+  `memory_paths`. The session summary card is hidden when no matching,
+  non-empty record exists. Memory records are keyed by thread ID and may also
+  originate from ChatGPT UI sessions.
 
 ## How It Works
 
@@ -105,9 +119,10 @@ from any provider renders identically.
 - **Codex CLI** stores transcripts as JSONL rollout files organized by date;
   turns are delimited by `task_started` events and token usage arrives via
   `token_count` events.
-- **OpenCode** keeps everything in one SQLite database; the provider opens it
-  read-only, joins `message` and `part` rows, and maps content part types
-  (text, reasoning, tool) onto the shared model.
+- **OpenCode** stores live sessions in SQLite and can also export individual
+  sessions as JSON. The provider reads SQLite databases in read-only mode or
+  parses exported JSON files, mapping text, reasoning, and tool parts onto the
+  shared model.
 
 ## Project Structure
 
@@ -132,7 +147,7 @@ src/agent_session_viewer/providers/
 ├── __init__.py      # ProviderBase interface + registry
 ├── claude.py        # Claude Code provider
 ├── codex.py         # Codex CLI provider
-└── opencode.py      # OpenCode provider (SQLite)
+└── opencode.py      # OpenCode provider (SQLite + JSON exports)
 ```
 
 ## Cost Estimation Disclaimer

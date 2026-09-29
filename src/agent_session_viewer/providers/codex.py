@@ -197,7 +197,7 @@ class CodexProvider(ProviderBase):
         for base_dir in paths:
             if not base_dir.is_dir():
                 continue
-            for jsonl in base_dir.rglob("rollout-*.jsonl"):
+            for jsonl in base_dir.rglob("*rollout-*.jsonl"):
                 if not jsonl.is_file():
                     continue
                 stat = jsonl.stat()
@@ -432,21 +432,29 @@ def _codex_token_usage(payload: dict) -> dict[str, int]:
     last_usage = info.get("last_token_usage") or payload.get("last_token_usage")
     if not isinstance(last_usage, dict) or not any(
         key in last_usage
-        for key in ("input_tokens", "cached_input_tokens", "output_tokens")
+        for key in (
+            "input_tokens",
+            "cached_input_tokens",
+            "cache_write_input_tokens",
+            "output_tokens",
+        )
     ):
         return {}
 
     input_tokens = _safe_int(last_usage.get("input_tokens", 0))
     cached_input_tokens = _safe_int(last_usage.get("cached_input_tokens", 0))
+    cache_write_tokens = _safe_int(last_usage.get("cache_write_input_tokens", 0))
     output_tokens = _safe_int(last_usage.get("output_tokens", 0))
     reasoning_tokens = _safe_int(last_usage.get("reasoning_output_tokens", 0))
     return {
-        "input_tokens": max(0, input_tokens - cached_input_tokens),
+        "input_tokens": max(
+            0, input_tokens - cached_input_tokens - cache_write_tokens,
+        ),
         # Codex reports reasoning as a detail within the output token count.
         "output_tokens": max(0, output_tokens - reasoning_tokens),
         "reasoning_tokens": reasoning_tokens,
         "cache_read_input_tokens": cached_input_tokens,
-        "cache_creation_input_tokens": 0,
+        "cache_creation_input_tokens": cache_write_tokens,
     }
 
 

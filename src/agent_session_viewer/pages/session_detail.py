@@ -4,7 +4,7 @@ from pathlib import Path
 
 from nicegui import run, ui
 
-from agent_session_viewer.discovery import discover_all_projects
+from agent_session_viewer.discovery import PROVIDER_COLORS, discover_all_projects
 from agent_session_viewer.providers import get_provider
 from agent_session_viewer.formatting import format_duration, format_duration_ago, get_activity_indicator
 from agent_session_viewer.parser import Message, Session, SubAgentInfo, Turn, parse_session
@@ -184,6 +184,11 @@ def _render_session(
             ui.badge(
                 f"{format_duration(total_dur)} model time",
                 color="blue-grey",
+            ).classes("text-xs")
+        if prov is not None:
+            ui.badge(
+                prov.slug,
+                color=PROVIDER_COLORS.get(prov.slug, "grey"),
             ).classes("text-xs")
         ago = format_duration_ago(mtime)
         ui.label(f"Last active: {ago}").classes("text-xs text-grey-6")

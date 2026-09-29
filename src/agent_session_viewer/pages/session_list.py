@@ -2,7 +2,7 @@
 
 from nicegui import run, ui
 
-from agent_session_viewer.discovery import discover_all_projects
+from agent_session_viewer.discovery import PROVIDER_COLORS, discover_all_projects
 from agent_session_viewer.formatting import (
     format_duration_ago,
     format_size,
@@ -66,6 +66,8 @@ def _render(sessions, container, stats_label, provider, project_name):
         for session in sessions:
             ago = format_duration_ago(session.mtime)
             size = format_size(session.size_bytes)
+            session_provider = session.provider or provider
+            provider_color = PROVIDER_COLORS.get(session_provider, "grey")
 
             with ui.card().classes("w-full cursor-pointer").on(
                 "click",
@@ -94,6 +96,9 @@ def _render(sessions, container, stats_label, provider, project_name):
                                         f"{session.api_call_count} API call{'s' if session.api_call_count != 1 else ''}",
                                         color="grey",
                                     ).classes("text-xs")
+                                ui.badge(
+                                    session_provider, color=provider_color,
+                                ).classes("text-xs")
                             ui.label(session.session_id).classes(
                                 "text-xs text-grey-5"
                             ).style("font-family: monospace")
@@ -112,6 +117,9 @@ def _render(sessions, container, stats_label, provider, project_name):
                                         f"{session.api_call_count} API call{'s' if session.api_call_count != 1 else ''}",
                                         color="grey",
                                     ).classes("text-xs")
+                                ui.badge(
+                                    session_provider, color=provider_color,
+                                ).classes("text-xs")
                         with ui.row().classes("gap-4 items-center"):
                             ui.label(f"Session File Size: {size}").classes("text-xs text-grey-6")
                             ui.label(f"Last Active: {ago}").classes("text-xs text-grey-6")

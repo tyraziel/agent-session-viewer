@@ -10,7 +10,11 @@ from agent_session_viewer.pricing import (
     estimate_usage_cost,
     get_pricing,
 )
-from agent_session_viewer.providers.codex import CodexProvider, get_codex_pricing
+from agent_session_viewer.providers.codex import (
+    CodexProvider,
+    _codex_token_usage,
+    get_codex_pricing,
+)
 from agent_session_viewer.providers.opencode import OpencodeProvider, _usage_from
 
 
@@ -115,6 +119,7 @@ class PricingTests(unittest.TestCase):
                         "last_token_usage": {
                             "input_tokens": 1_000,
                             "cached_input_tokens": 200,
+                            "cache_write_input_tokens": 100,
                             "output_tokens": 100,
                             "reasoning_output_tokens": 20,
                         },
@@ -140,16 +145,33 @@ class PricingTests(unittest.TestCase):
             if message.role == "assistant"
         )
         self.assertEqual(assistant.model, "gpt-6-luna")
-        self.assertEqual(assistant.usage["input_tokens"], 800)
+        self.assertEqual(assistant.usage["input_tokens"], 700)
         self.assertEqual(assistant.usage["cache_read_input_tokens"], 200)
+        self.assertEqual(assistant.usage["cache_creation_input_tokens"], 100)
         self.assertEqual(assistant.usage["output_tokens"], 80)
         self.assertEqual(assistant.usage["reasoning_tokens"], 20)
         self.assertAlmostEqual(
             _apply_provider_cost(
                 session, CodexProvider(include_default_memory=False),
             ).estimated_cost,
-            0.000132,
+            0.0001345,
         )
+
+    def test_codex_usage_without_cache_write_field_remains_supported(self):
+        usage = _codex_token_usage({
+            "info": {
+                "last_token_usage": {
+                    "input_tokens": 1_000,
+                    "cached_input_tokens": 200,
+                    "output_tokens": 100,
+                },
+            },
+        })
+
+        self.assertEqual(usage["input_tokens"], 800)
+        self.assertEqual(usage["cache_read_input_tokens"], 200)
+        self.assertEqual(usage["cache_creation_input_tokens"], 0)
+        self.assertEqual(usage["output_tokens"], 100)
 
     def test_unknown_qwen_model_remains_zero_cost(self):
         self.assertIsNone(OpencodeProvider().get_pricing("qwen/qwen3-coder"))
