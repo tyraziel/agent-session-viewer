@@ -2,7 +2,7 @@
 
 A pure Python web UI for browsing sessions, project memories, and prompt history from AI coding agent CLIs. Built with [NiceGUI](https://nicegui.io/).
 
-Supports **Claude Code**, **Codex CLI**, and **OpenCode** out of the box, with a provider abstraction for adding more.
+Supports **Claude Code**, **Codex CLI**, **OpenCode**, and **Pi** out of the box, with a provider abstraction for adding more.
 
 Web UI patterns adopted from [ai-guardian's](https://github.com/RedHatProductSecurity/ai-guardian) trace viewer.
 
@@ -10,11 +10,11 @@ Web UI patterns adopted from [ai-guardian's](https://github.com/RedHatProductSec
 
 - **Project Browser** — Lists all projects across every enabled provider with session counts, sizes, last-activity times, and provider badges. Auto-refreshes when sessions change on disk.
 - **Session Viewer** — Turn-by-turn conversation viewer with inline recap (your prompt + the agent's response) and expandable full details showing all tool calls, results, thinking blocks, and system messages.
-- **Multi-Provider** — Claude Code, Codex CLI, and OpenCode sessions are discovered, parsed, and rendered through a shared provider abstraction; each provider keeps its own storage format, resume commands, and pricing.
+- **Multi-Provider** — Claude Code, Codex CLI, OpenCode, and Pi sessions are discovered, parsed, and rendered through a shared provider abstraction; each provider keeps its own storage format, resume commands, and pricing.
 - **Prompt History** — Browse `~/.claude/history.jsonl` with filtering by project and text search. Entries with session IDs link directly to the session viewer.
 - **Memory Viewer** — Browse Claude project-level memories grouped by type (user, feedback, project, reference) with YAML frontmatter parsing.
 - **Activity Indicators** — Pulsing colored dot shows session recency: green (<5 min), yellow (5-10 min), orange (10-20 min).
-- **Resume Commands** — Copy-pasteable per-provider resume command (`claude --resume <id>`, `codex --resume <id>`, `opencode -s <id>`) on every session, with one-click clipboard copy.
+- **Resume Commands** — Copy-pasteable per-provider resume command (`claude --resume <id>`, `codex --resume <id>`, `opencode -s <id>`, `pi --session <id>`) on every session, with one-click clipboard copy.
 - **Session Titles** — Shows AI-generated or user-set session names alongside session IDs.
 - **Token & Cost Summary** — Per-session and per-turn token breakdowns with cost estimates for known models.
 - **Live Updates** — Polls for changes and auto-refreshes the view, including during active sessions.
@@ -26,6 +26,7 @@ Web UI patterns adopted from [ai-guardian's](https://github.com/RedHatProductSec
 | Claude Code | `~/.claude/projects/<project-slug>/<session-id>.jsonl` | One JSONL file per session; also provides prompt history (`~/.claude/history.jsonl`) and project memories |
 | Codex CLI | `~/.codex/sessions/YYYY/MM/DD/rollout-<timestamp>-<uuid>.jsonl` | One JSONL file per session, grouped by date; projects inferred from the session's working directory. Optional per-thread summaries and memory are read from `~/.codex/memories_*.sqlite` |
 | OpenCode | `~/.local/share/opencode/opencode.db`; exported `*ses_*.json` files | Reads the live SQLite database and exported JSON sessions through the same OpenCode provider; session paths can include multiple databases, export files, or directories containing them |
+| Pi | `~/.pi/agent/sessions/--<encoded-project-path>--/<timestamp>_<session-id>.jsonl` | One JSONL file per session, grouped by working directory; entries form a tree and the viewer follows the active branch |
 
 ## Quick Start
 
@@ -98,6 +99,11 @@ enable/disable a provider or add extra session locations, create
         }
       ],
       "include_default": true
+    },
+    "pi": {
+      "enabled": true,
+      "session_paths": ["/extra/path/to/pi/sessions"],
+      "include_default": true
     }
   }
 }
@@ -143,6 +149,15 @@ from any provider renders identically.
   sessions as JSON. The provider reads SQLite databases in read-only mode or
   parses exported JSON files, mapping text, reasoning, and tool parts onto the
   shared model.
+- **Pi** stores sessions as JSONL files grouped by an encoded working-directory
+  folder. Entries form a parent-linked tree; the provider follows the current
+  branch and maps messages, tool calls/results, usage, and summaries into the
+  shared model. See [Pi Session Format](docs/pi_session_format.md).
+
+For the provider contracts, current storage formats, and end-to-end steps for
+adding another provider, see [Provider Architecture](docs/provider_architecture.md)
+and [Adding a Provider](docs/adding_a_provider.md). Pi is from
+[pi.dev](https://pi.dev/) ([source repository](https://github.com/earendil-works/pi)).
 
 ## Project Structure
 
@@ -167,7 +182,8 @@ src/agent_session_viewer/providers/
 ├── __init__.py      # ProviderBase interface + registry
 ├── claude.py        # Claude Code provider
 ├── codex.py         # Codex CLI provider
-└── opencode.py      # OpenCode provider (SQLite + JSON exports)
+├── opencode.py      # OpenCode provider (SQLite + JSON exports)
+└── pi.py            # Pi provider (JSONL session trees)
 ```
 
 ## Cost Estimation Disclaimer

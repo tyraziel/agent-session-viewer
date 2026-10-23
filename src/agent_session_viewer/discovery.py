@@ -43,12 +43,14 @@ PROVIDER_RESUME_COMMANDS = {
     "claude": "claude --resume {session_id}",
     "codex": "codex --resume {session_id}",
     "opencode": "opencode -s {session_id}",
+    "pi": "pi --session {session_id}",
 }
 
 PROVIDER_COLORS = {
     "claude": "deep-orange",
     "codex": "teal",
     "opencode": "indigo",
+    "pi": "purple",
 }
 
 

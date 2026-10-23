@@ -13,6 +13,7 @@ from agent_session_viewer.providers import register_provider
 from agent_session_viewer.providers.claude import ClaudeProvider
 from agent_session_viewer.providers.codex import CodexProvider
 from agent_session_viewer.providers.opencode import OpencodeProvider
+from agent_session_viewer.providers.pi import PiProvider
 
 
 def main():
@@ -51,6 +52,7 @@ def main():
         ),
     ))
     register_provider(OpencodeProvider())
+    register_provider(PiProvider())
 
     create_app(config=config)
     ui.run(

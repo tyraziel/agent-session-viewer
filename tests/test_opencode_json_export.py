@@ -180,6 +180,51 @@ class OpencodeJsonExportTests(unittest.TestCase):
         self.assertEqual(len(duplicates), 2)
         self.assertEqual(len(databases), 1)
 
+    def test_session_revision_detects_wal_updates_without_database_mtime_change(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database = Path(temp_dir) / "opencode.db"
+            with sqlite3.connect(database) as connection:
+                connection.execute("pragma journal_mode=wal")
+                connection.executescript(
+                    """
+                    create table session (id text primary key, time_updated integer);
+                    create table message (
+                        id text primary key, session_id text, time_created integer,
+                        data text
+                    );
+                    create table part (
+                        id text primary key, session_id text, message_id text,
+                        data text
+                    );
+                    insert into session values ('ses_live', 1000);
+                    """,
+                )
+            provider = OpencodeProvider()
+            before = provider.get_session_revision(database, "ses_live")
+            before_mtime = provider.get_session_mtime(database, "ses_live")
+            database_mtime = database.stat().st_mtime_ns
+
+            writer = sqlite3.connect(database)
+            writer.execute(
+                "update session set time_updated = 2000 where id = 'ses_live'",
+            )
+            writer.execute(
+                "insert into message values ('msg-1', 'ses_live', 2000, '{}')",
+            )
+            writer.execute(
+                "insert into part values ('part-1', 'ses_live', 'msg-1', '{}')",
+            )
+            writer.commit()
+            after = provider.get_session_revision(database, "ses_live")
+            after_mtime = provider.get_session_mtime(database, "ses_live")
+            mtime_during_wal_write = database.stat().st_mtime_ns
+            writer.close()
+
+        self.assertEqual(database_mtime, mtime_during_wal_write)
+        self.assertNotEqual(before, after)
+        self.assertEqual(before_mtime, 1.0)
+        self.assertEqual(after_mtime, 2.0)
+
 
 if __name__ == "__main__":
     unittest.main()

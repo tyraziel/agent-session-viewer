@@ -164,6 +164,74 @@ class OpencodeProvider(ProviderBase):
             return _extract_opencode_json_export_tail(path, max_exchanges)
         return _extract_opencode_tail(path, session_id, max_exchanges)
 
+    def get_session_revision(
+        self, path: Path, session_id: str | None = None,
+    ) -> tuple[int, ...] | None:
+        if path.suffix.lower() == ".json" or not session_id:
+            return super().get_session_revision(path, session_id)
+
+        try:
+            conn = _open_db(path)
+        except sqlite3.Error:
+            return super().get_session_revision(path, session_id)
+        try:
+            row = conn.execute(
+                """
+                select
+                    s.time_updated,
+                    (select count(*) from message m where m.session_id = s.id),
+                    (select coalesce(sum(length(m.data)), 0)
+                       from message m where m.session_id = s.id),
+                    (select count(*) from part p where p.session_id = s.id),
+                    (select coalesce(sum(length(p.data)), 0)
+                       from part p where p.session_id = s.id)
+                from session s
+                where s.id = ?
+                """,
+                (session_id,),
+            ).fetchone()
+            if row is None:
+                return super().get_session_revision(path, session_id)
+            revision = tuple(int(value or 0) for value in row)
+            database_stat = path.stat()
+            try:
+                wal_stat = path.with_name(path.name + "-wal").stat()
+                wal_revision = (wal_stat.st_mtime_ns, wal_stat.st_size)
+            except OSError:
+                wal_revision = (0, 0)
+            return revision + (
+                database_stat.st_mtime_ns,
+                database_stat.st_size,
+                *wal_revision,
+            )
+        except (OSError, sqlite3.Error, TypeError, ValueError, OverflowError):
+            return super().get_session_revision(path, session_id)
+        finally:
+            conn.close()
+
+    def get_session_mtime(
+        self, path: Path, session_id: str | None = None,
+    ) -> float:
+        if path.suffix.lower() == ".json" or not session_id:
+            return super().get_session_mtime(path, session_id)
+
+        try:
+            conn = _open_db(path)
+        except sqlite3.Error:
+            return super().get_session_mtime(path, session_id)
+        try:
+            row = conn.execute(
+                "select time_updated from session where id = ?",
+                (session_id,),
+            ).fetchone()
+            if row is not None and row[0] is not None:
+                return int(row[0]) / 1000
+        except (sqlite3.Error, TypeError, ValueError, OverflowError):
+            pass
+        finally:
+            conn.close()
+        return super().get_session_mtime(path, session_id)
+
     def get_pricing(self, model: str) -> ModelPricing | None:
         return _opencode_pricing(model)
 

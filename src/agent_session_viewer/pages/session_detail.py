@@ -15,7 +15,7 @@ from agent_session_viewer.pricing import cost_by_type
 def create_session_detail_page(
     project_name: str, session_id: str, provider: str = "claude",
 ):
-    state = {"session": None, "last_mtime": 0.0, "session_path": None}
+    state = {"session": None, "last_revision": None, "session_path": None}
     expanded_turns: set[int] = set()
 
     with ui.column().classes("w-full max-w-6xl mx-auto p-6 gap-4"):
@@ -70,7 +70,9 @@ def create_session_detail_page(
             _parse, prov, session_info.path, session_id,
         )
         state["session"] = session
-        state["last_mtime"] = session_info.mtime
+        state["last_revision"] = _session_revision(
+            prov, session_info.path, session_info.session_id,
+        )
 
         if crumb_current:
             crumb_current.text = state["title"] or session_id[:12]
@@ -87,19 +89,17 @@ def create_session_detail_page(
         path = state["session_path"]
         if path is None:
             return
-        try:
-            current_mtime = Path(path).stat().st_mtime
-        except OSError:
-            return
-        if current_mtime != state["last_mtime"]:
-            state["last_mtime"] = current_mtime
-            prov = get_provider(state.get("provider", "claude"))
+        prov = get_provider(state.get("provider", "claude"))
+        current_revision = _session_revision(prov, Path(path), session_id)
+        if current_revision is not None and current_revision != state["last_revision"]:
             session = await run.io_bound(
                 _parse, prov, path, session_id,
             )
             if session is None:
                 return
             state["session"] = session
+            state["last_revision"] = current_revision
+            current_mtime = _session_mtime(prov, Path(path), session_id)
             _render_session(
                 session, header_label, meta_row, summary_container,
                 turns_container, turns_label, expanded_turns, current_mtime,
@@ -124,6 +124,25 @@ def _parse(prov, path, session_id: str) -> Session:
     if prov:
         return prov.parse_session(path, session_id=session_id)
     return parse_session(path)
+
+
+def _session_revision(prov, path: Path, session_id: str) -> tuple[int, ...] | None:
+    if prov:
+        return prov.get_session_revision(path, session_id=session_id)
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return stat.st_mtime_ns, stat.st_size
+
+
+def _session_mtime(prov, path: Path, session_id: str) -> float:
+    if prov:
+        return prov.get_session_mtime(path, session_id=session_id)
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
 
 
 def _get_turn_conversation(turn: Turn) -> list[tuple[str, str]]:

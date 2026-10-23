@@ -44,6 +44,25 @@ class ProviderBase(ABC):
     ) -> list[tuple[str, str]]:
         """Quick tail-read for active session cards."""
 
+    def get_session_revision(
+        self, path: Path, session_id: str | None = None,
+    ) -> tuple[int, ...] | None:
+        """Return a cheap change token for polling a session transcript."""
+        try:
+            stat = path.stat()
+        except OSError:
+            return None
+        return stat.st_mtime_ns, stat.st_size
+
+    def get_session_mtime(
+        self, path: Path, session_id: str | None = None,
+    ) -> float:
+        """Return the session's last-activity time for the detail header."""
+        try:
+            return path.stat().st_mtime
+        except OSError:
+            return 0.0
+
     def get_pricing(self, model: str) -> ModelPricing | None:
         """Return pricing for a model, or None if unknown."""
         return None
