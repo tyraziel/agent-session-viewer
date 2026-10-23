@@ -18,6 +18,7 @@ from agent_session_viewer.formatting import (
     format_size,
     get_activity_indicator,
 )
+from agent_session_viewer.pages.navigation import open_in_new_tab_button
 from agent_session_viewer.providers import get_all_providers
 
 
@@ -210,11 +211,10 @@ def _render_project_card(project: ProjectInfo):
     total_size = sum(s.size_bytes for s in project.sessions)
     provider = project.provider
     badge_color = PROVIDER_COLORS.get(provider, "grey")
+    project_url = f"/{provider}/project/{project.name}"
 
     with ui.card().classes("w-full cursor-pointer").on(
-        "click", lambda p=project: ui.navigate.to(
-            f"/{p.provider}/project/{p.name}"
-        )
+        "click", lambda u=project_url: ui.navigate.to(u)
     ):
         with ui.row().classes("items-center gap-3 w-full"):
             latest = project.sessions[0] if project.sessions else None
@@ -237,6 +237,7 @@ def _render_project_card(project: ProjectInfo):
                         ago = format_duration_ago(latest_session.mtime)
                         ui.label(f"Last active: {ago}").classes("text-xs text-grey-6")
 
+            open_in_new_tab_button(project_url)
             ui.icon("chevron_right").classes("text-grey-6")
 
 
@@ -270,6 +271,7 @@ def _render_active_card(active: ActiveSessionInfo):
                 "color: #00ff41; font-family: monospace;"
             )
             ui.badge(provider, color=badge_color).classes("text-xs")
+            open_in_new_tab_button(url)
 
         with ui.row().classes("items-center gap-3"):
             ui.label(project).classes("text-xs text-grey-7").style(

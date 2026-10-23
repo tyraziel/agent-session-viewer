@@ -12,11 +12,20 @@ DEFAULT_CONFIG_PATH = Path.home() / ".config" / "agent-session-viewer" / "config
 
 
 @dataclass
+class SessionPath:
+    """A configured session path; None preserves the provider's legacy scan depth."""
+
+    path: Path
+    recursive: bool | None = None
+    deduplicate: bool = False
+
+
+@dataclass
 class ProviderConfig:
     """Per-provider paths and toggles; Codex also supports memory databases."""
 
     enabled: bool = True
-    session_paths: list[Path] = field(default_factory=list)
+    session_paths: list[SessionPath] = field(default_factory=list)
     include_default: bool = True
     memory_paths: list[Path] = field(default_factory=list)
     include_default_memory: bool = True
@@ -26,7 +35,7 @@ class ProviderConfig:
 class Config:
     providers: dict[str, ProviderConfig] = field(default_factory=dict)
     # Legacy flat config (backwards compat)
-    session_paths: list[Path] = field(default_factory=list)
+    session_paths: list[SessionPath] = field(default_factory=list)
     include_default: bool = True
 
 
@@ -43,10 +52,9 @@ def load_config(config_path: Path | None = None) -> Config:
                 for slug, pconf in raw["providers"].items():
                     config.providers[slug] = ProviderConfig(
                         enabled=pconf.get("enabled", True),
-                        session_paths=[
-                            Path(p).expanduser()
-                            for p in pconf.get("session_paths", [])
-                        ],
+                        session_paths=_parse_session_paths(
+                            pconf.get("session_paths", []),
+                        ),
                         include_default=pconf.get("include_default", True),
                         memory_paths=[
                             Path(p).expanduser()
@@ -58,9 +66,9 @@ def load_config(config_path: Path | None = None) -> Config:
                     )
             else:
                 if "session_paths" in raw:
-                    config.session_paths = [
-                        Path(p).expanduser() for p in raw["session_paths"]
-                    ]
+                    config.session_paths = _parse_session_paths(
+                        raw["session_paths"],
+                    )
                 if "include_default" in raw:
                     config.include_default = bool(raw["include_default"])
         except (json.JSONDecodeError, OSError) as e:
@@ -71,9 +79,47 @@ def load_config(config_path: Path | None = None) -> Config:
     return config
 
 
+def _parse_session_paths(values: list) -> list[SessionPath]:
+    """Accept legacy strings and path objects with optional recursion."""
+    paths = []
+    for value in values:
+        if isinstance(value, str):
+            paths.append(SessionPath(Path(value).expanduser()))
+        elif isinstance(value, dict):
+            raw_path = value.get("path")
+            if not isinstance(raw_path, str) or not raw_path.strip():
+                log.warning("Ignoring session path object without a valid path")
+                continue
+            recursive = value.get("recursive", False)
+            if not isinstance(recursive, bool):
+                log.warning(
+                    "Ignoring session path object with non-boolean recursive flag: %s",
+                    raw_path,
+                )
+                continue
+            deduplicate = value.get("deduplicate", False)
+            if not isinstance(deduplicate, bool):
+                log.warning(
+                    "Ignoring session path object with non-boolean deduplicate flag: %s",
+                    raw_path,
+                )
+                continue
+            paths.append(SessionPath(
+                Path(raw_path).expanduser(), recursive, deduplicate,
+            ))
+        else:
+            log.warning("Ignoring unsupported session path entry of type %s", type(value).__name__)
+    return paths
+
+
+def normalize_session_path(path: Path | SessionPath) -> SessionPath:
+    """Normalize paths supplied directly by providers or tests."""
+    return path if isinstance(path, SessionPath) else SessionPath(path)
+
+
 def resolve_provider_paths(
     config: Config, provider_slug: str, default_paths: list[Path],
-) -> list[Path]:
+) -> list[SessionPath]:
     """Resolve session paths for a specific provider."""
     pconf = config.providers.get(provider_slug)
 
@@ -88,15 +134,15 @@ def resolve_provider_paths(
                 if claude_config_dir:
                     dp = Path(claude_config_dir) / "projects"
                     log.info("Including CLAUDE_CONFIG_DIR for %s: %s", provider_slug, dp)
-                    paths.append(dp)
+                    paths.append(SessionPath(dp))
                 else:
                     for dp in default_paths:
                         log.info("Including default path for %s: %s", provider_slug, dp)
-                        paths.append(dp)
+                        paths.append(SessionPath(dp))
             else:
                 for dp in default_paths:
                     log.info("Including default path for %s: %s", provider_slug, dp)
-                    paths.append(dp)
+                    paths.append(SessionPath(dp))
         return _dedup(paths)
 
     # No per-provider config — use legacy flat config (claude) or defaults
@@ -108,22 +154,22 @@ def resolve_provider_paths(
         claude_config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
         if claude_config_dir:
             log.info("Including CLAUDE_CONFIG_DIR for %s: %s/projects", provider_slug, claude_config_dir)
-            return [Path(claude_config_dir) / "projects"]
+            return _dedup([SessionPath(Path(claude_config_dir) / "projects")])
     for dp in default_paths:
         log.info("Including default path for %s: %s", provider_slug, dp)
-    return list(default_paths)
+    return _dedup([SessionPath(p) for p in default_paths])
 
 
 def _resolve_legacy_paths(
     config: Config, default_paths: list[Path],
-) -> list[Path]:
+) -> list[SessionPath]:
     paths = list(config.session_paths)
     if config.include_default:
         claude_config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
         if claude_config_dir:
-            paths.append(Path(claude_config_dir) / "projects")
+            paths.append(SessionPath(Path(claude_config_dir) / "projects"))
         else:
-            paths.extend(default_paths)
+            paths.extend(SessionPath(p) for p in default_paths)
     elif os.environ.get("CLAUDE_CONFIG_DIR"):
         log.info(
             "CLAUDE_CONFIG_DIR is set but include_default is false, skipping",
@@ -131,15 +177,17 @@ def _resolve_legacy_paths(
     return _dedup(paths)
 
 
-def _dedup(paths: list[Path]) -> list[Path]:
+def _dedup(paths: list[Path | SessionPath]) -> list[SessionPath]:
     seen: set[Path] = set()
-    deduped: list[Path] = []
-    for p in paths:
-        resolved = p.resolve()
+    deduped: list[SessionPath] = []
+    for path in paths:
+        spec = normalize_session_path(path)
+        resolved = spec.path.resolve()
         if resolved not in seen:
             seen.add(resolved)
-            deduped.append(p)
-    for p in deduped:
+            deduped.append(spec)
+    for spec in deduped:
+        p = spec.path
         if p.is_dir():
             log.info("Scanning session path: %s", p)
         elif p.is_file():

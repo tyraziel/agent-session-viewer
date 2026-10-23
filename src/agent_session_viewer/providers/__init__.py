@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+from agent_session_viewer.config import SessionPath
 from agent_session_viewer.discovery import ProjectInfo, SessionInfo
 from agent_session_viewer.parser import Session
 from agent_session_viewer.pricing import ModelPricing
@@ -24,7 +25,9 @@ class ProviderBase(ABC):
         """Default session directories when none configured."""
 
     @abstractmethod
-    def discover_projects(self, paths: list[Path]) -> list[ProjectInfo]:
+    def discover_projects(
+        self, paths: list[Path | SessionPath],
+    ) -> list[ProjectInfo]:
         """Discover projects from the given directories."""
 
     @abstractmethod

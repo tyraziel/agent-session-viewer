@@ -17,7 +17,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from agent_session_viewer.discovery import ProjectInfo, SessionInfo
+from agent_session_viewer.config import SessionPath, normalize_session_path
+from agent_session_viewer.discovery import (
+    ProjectInfo,
+    SessionInfo,
+    file_content_hash,
+)
 from agent_session_viewer.parser import (
     Message,
     Session,
@@ -95,7 +100,9 @@ class OpencodeProvider(ProviderBase):
     def default_paths(self) -> list[Path]:
         return [DEFAULT_DB_PATH]
 
-    def discover_projects(self, paths: list[Path]) -> list[ProjectInfo]:
+    def discover_projects(
+        self, paths: list[Path | SessionPath],
+    ) -> list[ProjectInfo]:
         projects_by_name: dict[str, ProjectInfo] = {}
         for db_path in _resolve_dbs(paths):
             rows = _discover_sessions(db_path)
@@ -161,7 +168,7 @@ class OpencodeProvider(ProviderBase):
         return _opencode_pricing(model)
 
 
-def _resolve_dbs(paths: list[Path]) -> list[Path]:
+def _resolve_dbs(paths: list[Path | SessionPath]) -> list[Path]:
     """Expand configured paths to validated opencode DB files.
 
     Each path may be a `.db` file or a directory (scanned for `*.db`).
@@ -169,17 +176,27 @@ def _resolve_dbs(paths: list[Path]) -> list[Path]:
     """
     dbs: list[Path] = []
     seen: set[Path] = set()
-    for p in paths:
+    for path_entry in paths:
+        spec = normalize_session_path(path_entry)
+        p = spec.path
+        seen_hashes: set[str] = set()
         candidates: list[Path]
         if p.is_file():
             candidates = [p]
         elif p.is_dir():
-            candidates = sorted(p.glob("*.db"))
+            scan = p.rglob("*.db") if spec.recursive is True else p.glob("*.db")
+            candidates = sorted(scan)
         else:
             continue
         for db in candidates:
             if not _is_opencode_db(db):
                 continue
+            if spec.deduplicate:
+                digest = file_content_hash(db)
+                if digest is not None:
+                    if digest in seen_hashes:
+                        continue
+                    seen_hashes.add(digest)
             resolved = db.resolve()
             if resolved in seen:
                 continue
@@ -188,15 +205,24 @@ def _resolve_dbs(paths: list[Path]) -> list[Path]:
     return dbs
 
 
-def _resolve_json_exports(paths: list[Path]) -> list[Path]:
+def _resolve_json_exports(paths: list[Path | SessionPath]) -> list[Path]:
     """Find OpenCode JSON exports from configured files or directories."""
     exports: list[Path] = []
     seen: set[Path] = set()
-    for path in paths:
+    for path_entry in paths:
+        spec = normalize_session_path(path_entry)
+        path = spec.path
+        seen_hashes: set[str] = set()
         if path.is_file():
             candidates = [path] if path.suffix.lower() == ".json" else []
         elif path.is_dir():
-            candidates = sorted(path.rglob("*ses_*.json"))
+            recursive = spec.recursive is not False
+            scan = (
+                path.rglob("*ses_*.json")
+                if recursive
+                else path.glob("*ses_*.json")
+            )
+            candidates = sorted(scan)
         else:
             candidates = []
 
@@ -206,6 +232,12 @@ def _resolve_json_exports(paths: list[Path]) -> list[Path]:
                 continue
             if _read_opencode_json_export(candidate) is None:
                 continue
+            if spec.deduplicate:
+                digest = file_content_hash(candidate)
+                if digest is not None:
+                    if digest in seen_hashes:
+                        continue
+                    seen_hashes.add(digest)
             seen.add(resolved)
             exports.append(candidate)
     return exports

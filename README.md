@@ -71,6 +71,13 @@ enable/disable a provider or add extra session locations, create
     },
     "codex": {
       "enabled": true,
+      "session_paths": [
+        {
+          "path": "/codex/artifact-root",
+          "recursive": true,
+          "deduplicate": true
+        }
+      ],
       "include_default": true,
       "memory_paths": ["/backup/codex/memories.sqlite"],
       "include_default_memory": true
@@ -79,8 +86,16 @@ enable/disable a provider or add extra session locations, create
       "enabled": true,
       "session_paths": [
         "/backups/opencode.db",
-        "/synced-dbs/",
-        "/exports/opencode/"
+        {
+          "path": "/synced-dbs",
+          "recursive": true,
+          "deduplicate": true
+        },
+        {
+          "path": "/exports/opencode",
+          "recursive": true,
+          "deduplicate": true
+        }
       ],
       "include_default": true
     }
@@ -89,9 +104,14 @@ enable/disable a provider or add extra session locations, create
 ```
 
 - `enabled` — set `false` to hide a provider entirely.
-- `session_paths` — extra locations to scan. For OpenCode, entries may be a
-  `.db` file, an exported JSON session file, or a directory (SQLite databases
-  and `*ses_*.json` exports are discovered recursively).
+- `session_paths` — extra locations to scan. Entries may remain strings to
+  preserve the provider's existing scan behavior, or be objects with a required
+  `path` and optional `recursive` flag. For objects, `recursive` defaults to
+  `false`; set it to `true` to descend through nested directories. OpenCode
+  paths may point to `.db` files, exported JSON files, or directories containing
+  SQLite databases and `*ses_*.json` exports.
+- Path objects also accept `deduplicate` (default `false`) to skip identical
+  file contents found within that path's scan.
 - `include_default` — also scan the provider's default location (default `true`).
 - `memory_paths` — Codex-only memory databases to check for a matching thread.
   Entries may be database files, directories containing `memories_*.sqlite`,

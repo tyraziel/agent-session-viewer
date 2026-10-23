@@ -1,12 +1,42 @@
 """Discover Claude Code projects and sessions from ~/.claude/projects/."""
 
+import hashlib
 import json
 import os
 import time
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 
 ACTIVE_THRESHOLD_SECONDS = 900
+
+
+def file_content_hash(path: Path) -> str | None:
+    """Return a cached SHA-256 digest keyed by path and file metadata."""
+    try:
+        resolved = path.resolve()
+        stat = resolved.stat()
+    except OSError:
+        return None
+    return _cached_file_content_hash(
+        str(resolved), stat.st_size, stat.st_mtime_ns,
+    )
+
+
+@lru_cache(maxsize=8192)
+def _cached_file_content_hash(
+    path: str,
+    size_bytes: int,
+    mtime_ns: int,
+) -> str | None:
+    digest = hashlib.sha256()
+    try:
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError:
+        return None
+    return digest.hexdigest()
 
 
 PROVIDER_RESUME_COMMANDS = {

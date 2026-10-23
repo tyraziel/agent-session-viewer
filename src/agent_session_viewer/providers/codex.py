@@ -7,7 +7,12 @@ from dataclasses import field
 from pathlib import Path
 from typing import Any
 
-from agent_session_viewer.discovery import ProjectInfo, SessionInfo
+from agent_session_viewer.config import SessionPath, normalize_session_path
+from agent_session_viewer.discovery import (
+    ProjectInfo,
+    SessionInfo,
+    file_content_hash,
+)
 from agent_session_viewer.parser import (
     Message,
     Session,
@@ -190,16 +195,41 @@ class CodexProvider(ProviderBase):
     def default_memory_paths(self) -> list[Path]:
         return [Path.home() / ".codex"]
 
-    def discover_projects(self, paths: list[Path]) -> list[ProjectInfo]:
+    def discover_projects(
+        self, paths: list[Path | SessionPath],
+    ) -> list[ProjectInfo]:
         projects_by_cwd: dict[str, ProjectInfo] = {}
         session_titles = _load_session_index()
 
-        for base_dir in paths:
-            if not base_dir.is_dir():
-                continue
-            for jsonl in base_dir.rglob("*rollout-*.jsonl"):
+        for path_entry in paths:
+            spec = normalize_session_path(path_entry)
+            base_path = spec.path
+            seen_hashes: set[str] = set()
+            if base_path.is_file():
+                candidates = (
+                    [base_path]
+                    if base_path.suffix == ".jsonl" and "rollout-" in base_path.name
+                    else []
+                )
+            elif base_path.is_dir():
+                scan = (
+                    base_path.rglob("*rollout-*.jsonl")
+                    if spec.recursive is not False
+                    else base_path.glob("*rollout-*.jsonl")
+                )
+                candidates = sorted(scan)
+            else:
+                candidates = []
+
+            for jsonl in candidates:
                 if not jsonl.is_file():
                     continue
+                if spec.deduplicate:
+                    digest = file_content_hash(jsonl)
+                    if digest is not None:
+                        if digest in seen_hashes:
+                            continue
+                        seen_hashes.add(digest)
                 stat = jsonl.stat()
                 session_id, _ = _parse_filename(jsonl.name)
                 cwd, meta_title = _extract_codex_meta(jsonl)

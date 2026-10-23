@@ -9,6 +9,7 @@ from agent_session_viewer.formatting import (
     get_activity_indicator,
 )
 from agent_session_viewer.pages.breadcrumbs import render_breadcrumbs
+from agent_session_viewer.pages.navigation import open_in_new_tab_button
 
 
 def create_session_list_page(project_name: str, provider: str = "claude"):
@@ -66,14 +67,15 @@ def _render(sessions, container, stats_label, provider, project_name):
         for session in sessions:
             ago = format_duration_ago(session.mtime)
             size = format_size(session.size_bytes)
+            session_url = (
+                f"/{provider}/project/{project_name}/session/{session.session_id}"
+            )
             session_provider = session.provider or provider
             provider_color = PROVIDER_COLORS.get(session_provider, "grey")
 
             with ui.card().classes("w-full cursor-pointer").on(
                 "click",
-                lambda s=session, pn=project_name, pv=provider: ui.navigate.to(
-                    f"/{pv}/project/{pn}/session/{s.session_id}"
-                ),
+                lambda u=session_url: ui.navigate.to(u),
             ):
                 with ui.row().classes("items-center gap-3 w-full"):
                     activity = get_activity_indicator(session.mtime)
@@ -134,4 +136,5 @@ def _render(sessions, container, stats_label, provider, project_name):
                                     f"navigator.clipboard.writeText({c!r})"
                                 ),
                             ).props("dense flat size=xs").classes("text-grey-6")
+                    open_in_new_tab_button(session_url)
                     ui.icon("chevron_right").classes("text-grey-6")

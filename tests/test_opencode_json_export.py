@@ -1,9 +1,11 @@
 import json
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 
-from agent_session_viewer.providers.opencode import OpencodeProvider
+from agent_session_viewer.config import SessionPath
+from agent_session_viewer.providers.opencode import OpencodeProvider, _resolve_dbs
 
 
 def _export_payload(directory: str) -> dict:
@@ -113,6 +115,70 @@ class OpencodeJsonExportTests(unittest.TestCase):
             exchanges,
             [("Run a check", "Done.")],
         )
+
+    def test_recursive_path_controls_nested_json_export_discovery(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            nested = root / "case" / "exports"
+            nested.mkdir(parents=True)
+            export_path = nested / "hash-ses_export123.json"
+            export_path.write_text(
+                json.dumps(_export_payload("/workspace/json-export-project")),
+                encoding="utf-8",
+            )
+            provider = OpencodeProvider()
+
+            shallow = provider.discover_projects([
+                SessionPath(root, recursive=False),
+            ])
+            recursive = provider.discover_projects([
+                SessionPath(root, recursive=True),
+            ])
+
+        self.assertEqual(shallow, [])
+        self.assertEqual(recursive[0].sessions[0].session_id, "ses_export123")
+
+    def test_recursive_path_controls_nested_database_discovery(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            nested = root / "case" / "dbs"
+            nested.mkdir(parents=True)
+            db_path = nested / "opencode.db"
+            with sqlite3.connect(db_path) as db:
+                db.execute("create table session (id text)")
+                db.execute("create table message (id text)")
+                db.execute("create table part (id text)")
+
+            shallow = _resolve_dbs([SessionPath(root, recursive=False)])
+            recursive = _resolve_dbs([SessionPath(root, recursive=True)])
+
+        self.assertEqual(shallow, [])
+        self.assertEqual(recursive, [db_path])
+
+    def test_deduplicate_skips_identical_database_files(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first_dir = root / "copy-a"
+            second_dir = root / "copy-b"
+            first_dir.mkdir()
+            second_dir.mkdir()
+            first_db = first_dir / "opencode.db"
+            second_db = second_dir / "opencode-copy.db"
+            with sqlite3.connect(first_db) as db:
+                db.execute("create table session (id text)")
+                db.execute("create table message (id text)")
+                db.execute("create table part (id text)")
+            second_db.write_bytes(first_db.read_bytes())
+
+            duplicates = _resolve_dbs([
+                SessionPath(root, recursive=True),
+            ])
+            databases = _resolve_dbs([
+                SessionPath(root, recursive=True, deduplicate=True),
+            ])
+
+        self.assertEqual(len(duplicates), 2)
+        self.assertEqual(len(databases), 1)
 
 
 if __name__ == "__main__":
