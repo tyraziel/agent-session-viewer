@@ -189,7 +189,7 @@ src/agent_session_viewer/providers/
 ## Cost Estimation Disclaimer
 
 Token cost estimates displayed in the session viewer use published standard
-API text-token list prices checked on September 24, 2026 —
+API text-token list prices checked on October 28, 2026 —
 [Anthropic](https://platform.claude.com/docs/en/about-claude/pricing) for Claude
 models and [OpenAI](https://developers.openai.com/api/docs/pricing) for OpenAI
 models.
@@ -197,7 +197,9 @@ models.
 OpenAI long-context rates and Anthropic's cache-write TTL rates are applied
 when the session usage data provides the necessary detail. OpenAI context-tier
 selection is inferred from input and cache token counts in the session logs,
-so it may differ from the provider's context accounting.
+so it may differ from the provider's context accounting. OpenAI cache-write
+estimates use 30-minute write rates where published; session usage does not
+distinguish the 12-hour cache-write tier.
 
 Actual spend may be higher or lower due to negotiated rates, billing tier, proxy
 or gateway providers, service tier, modality-specific charges, or pricing

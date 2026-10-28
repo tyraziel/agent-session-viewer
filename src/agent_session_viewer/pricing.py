@@ -21,6 +21,7 @@ class ModelPricing(ModelRates):
     cache_write_1h: float | None = None
     long_context: ModelRates | None = None
     long_context_threshold: int = 272_000
+    long_context_cache_write_1h: float | None = None
 
     def rates_for(self, input_tokens: int) -> ModelRates:
         """Choose the applicable rates for a request's full input context."""
@@ -35,8 +36,33 @@ def _claude(
     cache_read: float,
     cache_write: float,
     cache_write_1h: float,
+    long_context: ModelRates | None = None,
+    long_context_threshold: int = 272_000,
+    long_context_cache_write_1h: float | None = None,
 ) -> ModelPricing:
-    return ModelPricing(input, output, cache_read, cache_write, cache_write_1h)
+    return ModelPricing(
+        input=input,
+        output=output,
+        cache_read=cache_read,
+        cache_write=cache_write,
+        cache_write_1h=cache_write_1h,
+        long_context=long_context,
+        long_context_threshold=long_context_threshold,
+        long_context_cache_write_1h=long_context_cache_write_1h,
+    )
+
+
+_CLAUDE_SONNET_5_5 = _claude(2.00, 10.00, 0.10, 2.50, 4.00)
+_CLAUDE_HAIKU_5_5 = _claude(
+    0.10,
+    0.50,
+    0.01,
+    0.125,
+    0.20,
+    long_context=ModelRates(0.50, 2.50, 0.05, 0.625),
+    long_context_threshold=100_000,
+    long_context_cache_write_1h=1.00,
+)
 
 
 # Standard API prices per million tokens, from Anthropic's model pricing page.
@@ -55,17 +81,19 @@ _PRICING_TABLE: list[tuple[str, ModelPricing]] = [
     ("claude-opus-4-5", _claude(5.00, 25.00, 0.50, 6.25, 10.00)),
     ("claude-opus-4-1", _claude(15.00, 75.00, 1.50, 18.75, 30.00)),
     ("claude-opus-4", _claude(15.00, 75.00, 1.50, 18.75, 30.00)),
+    ("claude-sonnet-5-5", _CLAUDE_SONNET_5_5),
     ("claude-sonnet-5", _claude(2.00, 10.00, 0.20, 2.50, 4.00)),
     ("claude-sonnet-4-6", _claude(3.00, 15.00, 0.30, 3.75, 6.00)),
     ("claude-sonnet-4-5", _claude(3.00, 15.00, 0.30, 3.75, 6.00)),
     ("claude-sonnet-4", _claude(3.00, 15.00, 0.30, 3.75, 6.00)),
+    ("claude-haiku-5-5", _CLAUDE_HAIKU_5_5),
     ("claude-haiku-4-5", _claude(1.00, 5.00, 0.10, 1.25, 2.00)),
     ("claude-haiku-3-5", _claude(0.80, 4.00, 0.08, 1.00, 1.60)),
     # Legacy/alternate Anthropic model ID ordering.
     ("claude-3-5-haiku", _claude(0.80, 4.00, 0.08, 1.00, 1.60)),
     # Bare shorthand model names reported by some providers use latest pricing.
-    ("sonnet", _claude(2.00, 10.00, 0.20, 2.50, 4.00)),
-    ("haiku", _claude(1.00, 5.00, 0.10, 1.25, 2.00)),
+    ("sonnet", _CLAUDE_SONNET_5_5),
+    ("haiku", _CLAUDE_HAIKU_5_5),
     ("opus", _claude(4.00, 20.00, 0.20, 5.00, 8.00)),
 ]
 
@@ -88,6 +116,11 @@ def cost_by_type(pricing: ModelPricing, usage: dict[str, Any]) -> dict[str, floa
     rates = pricing.rates_for(
         input_tokens + cache_read_tokens + cache_create_tokens,
     )
+    is_long_context = (
+        pricing.long_context is not None
+        and input_tokens + cache_read_tokens + cache_create_tokens
+        > pricing.long_context_threshold
+    )
 
     cache_creation = usage.get("cache_creation")
     if isinstance(cache_creation, dict) and (
@@ -97,13 +130,17 @@ def cost_by_type(pricing: ModelPricing, usage: dict[str, Any]) -> dict[str, floa
         cache_5m = _usage_int(cache_creation.get("ephemeral_5m_input_tokens", 0))
         cache_1h = _usage_int(cache_creation.get("ephemeral_1h_input_tokens", 0))
         unclassified = max(0, cache_create_tokens - cache_5m - cache_1h)
+        cache_write_1h_rate = (
+            pricing.long_context_cache_write_1h
+            if is_long_context
+            and pricing.long_context_cache_write_1h is not None
+            else pricing.cache_write_1h
+            if pricing.cache_write_1h is not None
+            else rates.cache_write
+        )
         cache_write_cost = (
             cache_5m * rates.cache_write
-            + cache_1h * (
-                pricing.cache_write_1h
-                if pricing.cache_write_1h is not None
-                else rates.cache_write
-            )
+            + cache_1h * cache_write_1h_rate
             + unclassified * rates.cache_write
         ) / 1_000_000
     else:

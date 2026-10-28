@@ -63,6 +63,14 @@ _CODEX_PRICING: dict[str, ModelPricing] = {
         10.00, 50.00, 1.00, 12.50,
         _long_rates(20.00, 75.00, 2.00, 25.00),
     ),
+    "gpt-6.1-sol": _openai_rates(
+        2.00, 10.00, 0.10, 2.50,
+        _long_rates(4.00, 15.00, 0.20, 5.00),
+    ),
+    "gpt-6.1-terra": _openai_rates(
+        1.00, 5.00, 0.05, 1.25,
+        _long_rates(2.00, 7.50, 0.10, 2.50),
+    ),
     "gpt-6-sol": _openai_rates(
         2.00, 10.00, 0.20, 2.50,
         _long_rates(4.00, 15.00, 0.40, 5.00),

@@ -29,6 +29,32 @@ class PricingTests(unittest.TestCase):
         self.assertIsNotNone(opus_41)
         self.assertEqual((opus_41.input, opus_41.output), (15.0, 75.0))
 
+    def test_new_claude_model_rates_and_haiku_long_context(self):
+        sonnet_55 = get_pricing("claude-sonnet-5-5-20261015")
+        self.assertIsNotNone(sonnet_55)
+        self.assertEqual(
+            (sonnet_55.input, sonnet_55.output, sonnet_55.cache_read),
+            (2.0, 10.0, 0.1),
+        )
+        self.assertEqual(get_pricing("sonnet"), sonnet_55)
+
+        haiku_55 = get_pricing("claude-haiku-5-5-20261015")
+        self.assertIsNotNone(haiku_55)
+        self.assertEqual(haiku_55.rates_for(100_000).input, 0.1)
+        self.assertEqual(haiku_55.rates_for(100_001).input, 0.5)
+        self.assertEqual(get_pricing("haiku"), haiku_55)
+
+        costs = estimate_usage_cost(
+            "claude-haiku-5-5",
+            {
+                "input_tokens": 100_001,
+                "cache_creation_input_tokens": 1,
+                "cache_creation": {"ephemeral_1h_input_tokens": 1},
+            },
+        )
+        self.assertEqual(costs["input"], 0.0500005)
+        self.assertEqual(costs["cache_create"], 0.000001)
+
     def test_claude_cache_creation_uses_ttl_breakdown(self):
         costs = estimate_usage_cost(
             "claude-opus-5-5",
@@ -54,6 +80,24 @@ class PricingTests(unittest.TestCase):
         })
         self.assertEqual(costs["input"], 1.088004)
         self.assertEqual(costs["output"], 15.0)
+
+    def test_new_openai_gpt_61_model_rates(self):
+        sol = get_codex_pricing("gpt-6.1-sol-20261020")
+        self.assertIsNotNone(sol)
+        self.assertEqual(
+            (sol.input, sol.output, sol.cache_read, sol.cache_write),
+            (2.0, 10.0, 0.1, 2.5),
+        )
+        self.assertEqual(sol.rates_for(272_001).input, 4.0)
+        self.assertEqual(sol.rates_for(272_001).cache_read, 0.2)
+
+        terra = get_codex_pricing("gpt-6.1-terra")
+        self.assertIsNotNone(terra)
+        self.assertEqual(
+            (terra.input, terra.output, terra.cache_read, terra.cache_write),
+            (1.0, 5.0, 0.05, 1.25),
+        )
+        self.assertEqual(terra.rates_for(272_001).input, 2.0)
 
     def test_opencode_openai_provider_reprices_long_context_and_cache_tokens(self):
         session = Session(
