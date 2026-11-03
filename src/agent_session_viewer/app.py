@@ -31,11 +31,19 @@ def _page_setup():
         "background: #0a0a1a; border-top: 1px solid #2a2a4a; padding: 8px;"
     ):
         ui.html(
-            'Cost estimates are based on '
-            '<a href="https://www.anthropic.com/pricing" target="_blank" '
+            'Token cost estimates use published standard API text-token list '
+            'prices last checked on October 28, 2026 — '
+            '<a href="https://platform.claude.com/docs/en/about-claude/pricing" '
+            'target="_blank" '
             'style="color: #9e9e9e; text-decoration: underline;">'
-            'published Anthropic list prices</a>'
-            ' as of August 20th, 2026 and may not reflect actual billing.'
+            'Anthropic</a> for Claude models and '
+            '<a href="https://developers.openai.com/api/docs/pricing" '
+            'target="_blank" '
+            'style="color: #9e9e9e; text-decoration: underline;">'
+            'OpenAI</a> for OpenAI models. Actual spend may be higher or lower '
+            'due to negotiated rates, billing tier, proxy or gateway providers, '
+            'service tier, modality-specific charges, or pricing changes. '
+            'These estimates should not be used for accounting purposes.'
         ).classes("text-xs text-grey-7")
 
 
