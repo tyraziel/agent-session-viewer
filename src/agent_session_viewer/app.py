@@ -31,20 +31,21 @@ def _page_setup():
         "background: #0a0a1a; border-top: 1px solid #2a2a4a; padding: 8px;"
     ):
         ui.html(
-            'Token cost estimates use published standard API text-token list '
-            'prices last checked on October 28, 2026 — '
+            'Token cost estimates for '
             '<a href="https://platform.claude.com/docs/en/about-claude/pricing" '
             'target="_blank" '
             'style="color: #9e9e9e; text-decoration: underline;">'
-            'Anthropic</a> for Claude models and '
+            'Anthropic</a> and '
             '<a href="https://developers.openai.com/api/docs/pricing" '
             'target="_blank" '
             'style="color: #9e9e9e; text-decoration: underline;">'
-            'OpenAI</a> for OpenAI models. Actual spend may be higher or lower '
+            'OpenAI</a> models are based on publicly available list prices. '
+            ' Prices last checked on October 28, 2026.<br>'
+            'Actual spend may be higher or lower '
             'due to negotiated rates, billing tier, proxy or gateway providers, '
             'service tier, modality-specific charges, or pricing changes. '
-            'These estimates should not be used for accounting purposes.'
-        ).classes("text-xs text-grey-7")
+            '<strong>These estimates should not be used for accounting purposes.</strong>'
+        ).classes("text-xs text-grey-7 text-center")
 
 
 def create_app(config: Config | None = None):
