@@ -730,8 +730,9 @@ def _extract_opencode_tail(
 ) -> list[tuple[str, str]]:
     if not session_id:
         return []
-    user_texts: list[str] = []
-    assistant_texts: list[str] = []
+    exchanges: list[tuple[str, str]] = []
+    current_user_text: str | None = None
+    current_assistant_text = ""
     try:
         conn = _open_db(path)
     except sqlite3.Error:
@@ -752,17 +753,17 @@ def _extract_opencode_tail(
         text = text.strip()
         if not text:
             continue
-        if role == "assistant":
-            assistant_texts.append(text)
-        elif role == "user":
-            user_texts.append(text)
+        if role == "user":
+            if current_user_text is not None:
+                exchanges.append((current_user_text, current_assistant_text))
+            current_user_text = text
+            current_assistant_text = ""
+        elif role == "assistant" and current_user_text is not None:
+            current_assistant_text = text
 
-    messages: list[tuple[str, str]] = []
-    for i in range(min(len(user_texts), len(assistant_texts))):
-        messages.append((user_texts[i], assistant_texts[i]))
-    if len(user_texts) > len(assistant_texts):
-        messages.append((user_texts[-1], ""))
-    return messages[-max_exchanges:]
+    if current_user_text is not None:
+        exchanges.append((current_user_text, current_assistant_text))
+    return exchanges[-max_exchanges:]
 
 
 def _extract_opencode_json_export_tail(
