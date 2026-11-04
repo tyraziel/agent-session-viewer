@@ -33,3 +33,8 @@ agent-session-viewer = "agent_session_viewer.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agent_session_viewer"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
