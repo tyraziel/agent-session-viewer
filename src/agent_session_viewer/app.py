@@ -31,12 +31,21 @@ def _page_setup():
         "background: #0a0a1a; border-top: 1px solid #2a2a4a; padding: 8px;"
     ):
         ui.html(
-            'Cost estimates are based on '
-            '<a href="https://www.anthropic.com/pricing" target="_blank" '
+            'Token cost estimates for '
+            '<a href="https://platform.claude.com/docs/en/about-claude/pricing" '
+            'target="_blank" '
             'style="color: #9e9e9e; text-decoration: underline;">'
-            'published Anthropic list prices</a>'
-            ' as of August 20th, 2026 and may not reflect actual billing.'
-        ).classes("text-xs text-grey-7")
+            'Anthropic</a> and '
+            '<a href="https://developers.openai.com/api/docs/pricing" '
+            'target="_blank" '
+            'style="color: #9e9e9e; text-decoration: underline;">'
+            'OpenAI</a> models are based on publicly available list prices. '
+            ' Prices last checked on October 28, 2026.<br>'
+            'Actual spend may be higher or lower '
+            'due to negotiated rates, billing tier, proxy or gateway providers, '
+            'service tier, modality-specific charges, or pricing changes. '
+            '<strong>These estimates should not be used for accounting purposes.</strong>'
+        ).classes("text-xs text-grey-7 text-center")
 
 
 def create_app(config: Config | None = None):

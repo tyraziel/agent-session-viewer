@@ -189,7 +189,7 @@ src/agent_session_viewer/providers/
 ## Cost Estimation Disclaimer
 
 Token cost estimates displayed in the session viewer use published standard
-API text-token list prices checked on October 28, 2026 —
+API text-token list prices last checked on October 28, 2026 —
 [Anthropic](https://platform.claude.com/docs/en/about-claude/pricing) for Claude
 models and [OpenAI](https://developers.openai.com/api/docs/pricing) for OpenAI
 models.
